@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/simple_test.py\" \"/home/laniakea/Development/galaxy-db-bridge/tests/simple_test.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/test_cache_fix.py\" \"/home/laniakea/Development/galaxy-db-bridge/tests/test_cache_fix.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/test_cache_logic.py\" \"/home/laniakea/Development/galaxy-db-bridge/tests/test_cache_logic.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/test_cache_verification.py\" \"/home/laniakea/Development/galaxy-db-bridge/tests/test_cache_verification.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/test_szse_sync.py\" \"/home/laniakea/Development/galaxy-db-bridge/tests/test_szse_sync.py\")",
+      "Bash(mkdir -p \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/debug\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/check_52_code.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_52_code.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/check_53_55_codes.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_53_55_codes.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/check_remaining_sh_a.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_remaining_sh_a.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/debug_date_format.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/debug/debug_date_format.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/scripts/check_trading_calendar_data.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_trading_calendar_data.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/scripts/check_duplicate_and_missing_dates.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_duplicate_and_missing_dates.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/scripts/check_trading_calendar_duplicates.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_trading_calendar_duplicates.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/scripts/check_security_type_distribution.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_security_type_distribution.py\")",
+      "Bash(mv \"/home/laniakea/Development/galaxy-db-bridge/scripts/check_month_data.py\" \"/home/laniakea/Development/galaxy-db-bridge/scripts/checks/check_month_data.py\")",
+      "Bash(markdownlint \"boards/kline/plan.md\" \"boards/kline/tasks.md\" \"boards/kline/design.md\")",
+      "Bash(python -m pytest tests/kline/test_kline_command.py tests/unit/test_kline_completeness_checker.py tests/unit/test_kline_non_trading_day.py)",
+      "Bash(python -m unittest tests.kline.test_kline_command tests.unit.test_kline_completeness_checker tests.unit.test_kline_non_trading_day)",
+      "Bash(uv run:*)"
+    ]
+  }
+}

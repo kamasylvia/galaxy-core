@@ -1,0 +1,139 @@
+# Galaxy Data Ingest 配置文件
+# 注意：敏感信息（密码、密钥等）应通过环境变量传入
+
+[amazing_data]
+# AmazingData API 配置（非敏感）
+# username, password, host, port 通过环境变量 GALAXY_USERNAME, GALAXY_PASSWORD, GALAXY_HOST, GALAXY_PORT 传入
+local_path = "./data/local_cache/"
+
+# 连接和超时设置（非敏感）
+timeout = 30
+
+[database]
+# TimescaleDB 连接配置（非敏感）
+# host, port, database, user, password 通过环境变量 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 传入
+
+# 连接池设置（非敏感）
+pool_size = 10
+max_overflow = 20
+pool_timeout = 30
+
+[sync]
+# 数据同步配置
+default_start_year = 2013
+batch_size = 1000
+adjust_for_split = true
+
+[logging]
+level = "INFO"
+file_path = "./logs/"
+max_size = "50MB"
+backup_count = 5
+# 新增配置：按日期时间分目录存储日志
+enable_separate_log_files = true
+log_file_pattern = "./logs/{date}/{time}.log"
+
+[scheduler]
+# K-line sync trigger time (hour, minute)
+kline_trigger_hour = 23
+kline_trigger_minute = 0
+
+# Calendar sync dates - sync next year calendar on December 20
+calendar_sync_month = 12
+calendar_sync_day = 20
+calendar_check_window_start = 20  # Check from Dec 20
+calendar_check_window_end = 31    # Check until Dec 31
+
+# Retry policy per SCHED-03
+max_retries = 3
+retry_delays_minutes = [5, 15, 30]  # 5min, 15min, 30min exponential backoff
+
+# Sync scope - which intervals to auto-sync
+# Short intervals (MIN + DAY): synced daily with lookback (5 / 30 trading days)
+# Long intervals: synced only on last trading day of period
+# NOTE: MIN intervals are disabled by default due to high data volume.
+# Enable only if you have sufficient bandwidth and storage.
+enabled_intervals = ["day", "week", "month", "season", "year"]
+
+# Security type for auto-sync (SH_A for Shanghai A-shares, SZ_A for Shenzhen A-shares)
+security_type = "EXTRA_ETF"
+
+# Completeness check configuration
+# Intervals to check for completeness (used by monthly full check and post-sync verification)
+check_intervals = ["day", "week", "month", "season", "year"]
+
+# Daily 17:00 routine check REMOVED:
+# KlineSyncJob now uses expanded lookback (30 trading days for DAY, 5 for MIN)
+# which auto-repairs recent gaps during the 23:00 sync pass.
+# Only monthly full check and post-sync verification remain.
+# check_trigger_hour = 17
+# check_trigger_minute = 0
+
+# Monthly full check - runs on first non-trading day of each month at midnight
+# Full check: from AmazingData data start (2013)
+monthly_full_check_hour = 0
+monthly_full_check_minute = 0
+
+# Check mode configuration
+# routine_lookback_periods: number of periods to look back for routine checks
+# Full check: from AmazingData data start (2013)
+# Routine check: last N periods (default 10)
+routine_lookback_periods = 10
+
+# Logging level for scheduler
+log_level = "INFO"
+
+# Per-security-type check ranges (based on AmazingData data availability)
+# Data source: docs/AmazingData/Markdown/AmazingData开发手册/2. 功能介绍/2.2 数据详情.md
+# 行情数据起点: 2013年至今 (股票、指数、债券、场内基金)
+
+[scheduler.check_ranges.SH_A]
+start_year = 2013  # 上交所A股 - AmazingData 数据起点
+
+[scheduler.check_ranges.SZ_A]
+start_year = 2013  # 深交所A股 - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_STOCK_A]
+start_year = 2013  # 上交所、深交所、北交所A股 - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_STOCK_A_SH_SZ]
+start_year = 2013  # 上交所、深交所A股 - AmazingData 数据起点
+
+[scheduler.check_ranges.BJ_A]
+start_year = 2013  # 北交所A股 - AmazingData 数据起点（注：北交所2021年成立，但数据覆盖2013年起）
+
+[scheduler.check_ranges.SH_INDEX]
+start_year = 2013  # 上交所指数 - AmazingData 数据起点
+
+[scheduler.check_ranges.SZ_INDEX]
+start_year = 2013  # 深交所指数 - AmazingData 数据起点
+
+[scheduler.check_ranges.BJ_INDEX]
+start_year = 2013  # 北交所指数 - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_INDEX_A]
+start_year = 2013  # 上交所、深交所、北交所指数 - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_INDEX_A_SH_SZ]
+start_year = 2013  # 上交所、深交所指数 - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_ETF]
+start_year = 2013  # 上交所、深交所ETF - AmazingData 数据起点（场内基金）
+
+[scheduler.check_ranges.SH_ETF]
+start_year = 2013  # 上交所ETF - AmazingData 数据起点
+
+[scheduler.check_ranges.SZ_ETF]
+start_year = 2013  # 深交所ETF - AmazingData 数据起点
+
+[scheduler.check_ranges.EXTRA_KZZ]
+start_year = 2013  # 上交所、深交所可转债 - AmazingData 数据起点（债券类）
+
+[scheduler.check_ranges.SH_KZZ]
+start_year = 2013  # 上交所可转债 - AmazingData 数据起点
+
+[scheduler.check_ranges.SZ_KZZ]
+start_year = 2013  # 深交所可转债 - AmazingData 数据起点
+
+[scheduler.check_ranges.default]
+start_year = 2013  # 默认起始年份 - AmazingData 股票/指数/债券/场内基金统一数据起点

@@ -1,0 +1,66 @@
+[project]
+name = "galaxy-db-sync"
+version = "0.1.0"
+description = "AmazingData to Database Bridge"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "amazingdata @ file:///${PROJECT_ROOT}/wheels/AmazingData-1.0.26-cp313-none-any.whl",
+    "sqlalchemy>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "click>=8.0.0",
+    "requests>=2.25.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "psycopg2-binary>=2.9.5",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.1"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+galaxy = "galaxy_db_sync.__main__:main"
+galaxy-db-sync = "galaxy_db_sync.application.cli.commands:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.urls]
+Homepage = "https://github.com/kamasylvia/galaxy-db-sync"
+Repository = "https://github.com/kamasylvia/galaxy-db-sync"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.2",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.8.0",
+  "mypy>=1.0.0",
+  "black>=26.1.0"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/galaxy_db_sync"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.ruff]
+# Ruff 配置（与 uv 生态兼容）
+target-version = "py313"
+line-length = 100
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
