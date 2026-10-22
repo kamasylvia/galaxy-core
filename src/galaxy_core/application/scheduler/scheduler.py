@@ -492,7 +492,7 @@ class AutoSyncScheduler:
             if not days:
                 return
             log_path = f"logs/realtime_sub_{today.strftime('%Y%m%d')}.log"
-            log.info(f"拉起 realtime_sub ({start_str}-{end_str})")
+            logger.info(f"拉起 realtime_sub ({start_str}-{end_str})")
             with open(log_path, "ab") as lf:
                 self._realtime_proc = _sp.Popen(
                     ["uv", "run", "scripts/realtime_sub.py"],
@@ -644,20 +644,17 @@ class AutoSyncScheduler:
                 ok = await apply_retention_policy(session, table, days)
                 if ok:
                     logger.info(f"retention 已应用: {table} = {days} 天")
-
-    async def _run_kline_sync_with_cleanup(self, today: date) -> None:
-        """12:00 日间链(2026-10-22 起仅 cleanup,不碰 SDK)。
-
-        白天 TGW 独占给 realtime_sub(9:00-15:30)。K 线全量 +
-        industry/fundflow/financial/refdata 全改走 0:10 独立 job 串行。
-        本链只做日志清理(无 SDK 调用,可白天跑)。
-        """
-        # 日志清理（复用基础设施）
-        logger.debug("运行日志清理")
         try:
             await self._cleanup_job.run()
         except Exception as e:
             logger.error(f"日志清理失败: {e}", exc_info=True)
+
+    async def _run_kline_sync_with_cleanup(self, today: date) -> None:
+        """12:00 日间链(2026-10-22 起空转:cleanup 已搬 0:10)。
+
+        白天 TGW 独占给 realtime_sub(9:00-15:30),全量改走 0:10 独立 job。
+        本链保留空壳(触发器+task 命名不变,防旧测试/监控引用断裂)。
+        """
 
     def _on_task_done(self, task: asyncio.Task) -> None:
         """task 完成 callback:从 _tasks 移除 + retrieve exception(2026-07-28 Bug 3)。

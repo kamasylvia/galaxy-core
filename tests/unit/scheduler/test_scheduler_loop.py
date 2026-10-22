@@ -295,15 +295,15 @@ class TestSignalAudit:
 
 
 class TestPostSyncCleanup:
-    """Tests for 12:00 日间链(2026-10-22 起仅 cleanup,不碰 SDK).
+    """Tests for 12:00 日间链(2026-10-22 起空转:cleanup 已搬 0:10).
 
     白天 TGW 独占给 realtime_sub,全量改走 0:10 独立 job。
-    主链只调 cleanup,其他 job 一律不得调。
+    主链不调任何 job。
     """
 
     @pytest.mark.asyncio
     async def test_run_kline_sync_with_cleanup(self):
-        """主链只做 cleanup,无 SDK 调用。"""
+        """主链空转(cleanup 已搬 0:10),无 SDK 调用,不调任何 job。"""
         scheduler = AutoSyncScheduler()
         scheduler._kline_job.run_day = AsyncMock()
         scheduler._kline_job.run_minute = AsyncMock()
@@ -320,7 +320,7 @@ class TestPostSyncCleanup:
 
         await scheduler._run_kline_sync_with_cleanup(today)
 
-        # 全量已搬走:主链只调 cleanup
+        # 全量已搬走:主链空转,连 cleanup 都不调
         scheduler._kline_job.run_day.assert_not_called()
         scheduler._kline_job.run_minute.assert_not_called()
         scheduler._industry_index_job.run_daily.assert_not_called()
@@ -328,18 +328,18 @@ class TestPostSyncCleanup:
         scheduler._refdata_job.run_stock_basic.assert_not_called()
         scheduler._fundflow_job.run_daily.assert_not_called()
         scheduler._financial_job.run.assert_not_called()
-        scheduler._cleanup_job.run.assert_called_once()
+        scheduler._cleanup_job.run.assert_not_called()
     async def test_chain_isolation_step_failure_does_not_block_others(self):
-        """回归: cleanup raise 不抛到外层(单步链,失败记 log 不抛)。"""
+        """回归:主链空转永不抛(无 SDK 调用,无失败面)。"""
         scheduler = AutoSyncScheduler()
         scheduler._cleanup_job.run = AsyncMock(side_effect=RuntimeError("clean boom"))
 
         today = date(2025, 3, 29)
 
-        # 不应抛异常
+        # 不应抛异常(空转,连 cleanup 都不调)
         await scheduler._run_kline_sync_with_cleanup(today)
 
-        scheduler._cleanup_job.run.assert_called_once()
+        scheduler._cleanup_job.run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_on_task_done_logs_exception(self, caplog):
@@ -414,13 +414,14 @@ class TestPostSyncCleanup:
         scheduler._industry_index_job.run_dimensions = await _rec("industry_dims")
         for m in ("run_day", "run_minute"):
             setattr(scheduler._kline_job, m, await _rec(f"kline.{m}"))
-        scheduler._cleanup_job.run = AsyncMock()
+        scheduler._cleanup_job.run = await _rec("cleanup")
 
         await scheduler._run_minute_cover_with_cleanup(date(2025, 3, 29))
 
-        # 非 K 线在 K 线之前,分钟 cover 在日线之后
+        # 非 K 线在 K 线之前,分钟 cover 在日线之后,cleanup 收尾
         assert order.index("fundflow") < order.index("kline.run_day")
         assert order.index("kline.run_day") < order.index("kline.run_minute")
+        assert order.index("kline.run_minute") < order.index("cleanup")
 
 class TestSleepDuration:
     """Tests for sleep duration calculation."""
