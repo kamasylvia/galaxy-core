@@ -285,9 +285,8 @@ class AutoSyncScheduler:
                     f"活跃task={len(self._tasks)} _running={self._running}"
                 )
 
-            # 轮询触发条件(2026-10-22 起白天无 SDK 调用:16:10/19:50 已删,
-            # 全量改走 0:10;12:00 主链只做 cleanup;realtime 由本进程 spawn/kill)
-            await self._check_kline_trigger(today, current_time)
+            # 轮询触发条件(2026-10-22 起白天零 SDK 调用:
+            # 0:10 全量(minute_cover_*);realtime 由本进程 spawn/kill;00:00 日历)
             await self._check_minute_cover_trigger(today, current_time)
             await self._check_realtime_sub_window(today, current_time)
             await self._check_calendar_trigger(today, current_time)
@@ -384,39 +383,6 @@ class AutoSyncScheduler:
         # 今天之前有其他非交易日（周末/节假日）
         return False
 
-    async def _check_kline_trigger(self, today: date, current_time: time) -> None:
-        """检查并在配置的时间触发K线同步（生产默认 00:10，仅交易日后一天）。
-
-        只在昨天是交易日时触发（T+1 模式）。非交易日无新数据，无需同步。
-        K线同步完成后触发同步后验证（D-19）和日志清理。
-        """
-        trigger_hour = self._config.get("kline_trigger_hour", 0)
-        trigger_minute = self._config.get("kline_trigger_minute", 10)
-
-        if current_time.hour == trigger_hour and current_time.minute == trigger_minute:
-            yesterday = today - timedelta(days=1)
-            trading_days = await self._calendar_store.get_trading_days(yesterday, yesterday)
-            if not trading_days:
-                # 提级 debug→info(2026-07-29 观测盲区):非交易日跳过应可见,
-                # 否则 scheduler 静默不跑时无任何线索(calendar instant 错位 bug
-                # 就是因为跳过日志全 debug,INFO 级看不到)
-                logger.info(f"跳过K线同步: {yesterday} 不是交易日，无新数据")
-                return
-
-            logger.info(f"触发K线同步: {current_time} (同步日期 {yesterday})")
-
-            task = asyncio.create_task(
-                self._run_kline_sync_with_cleanup(today),
-                name=f"kline_sync_{today}"
-            )
-            self._tasks.add(task)
-            task.add_done_callback(self._on_task_done)
-
-    async def _check_kline_catchup_trigger(
-        self, today: date, current_time: time
-    ) -> None:
-        """已废除(2026-10-22):16:10 并入 0:10 全量 job。保留空壳防旧测试 import 报错。"""
-        return
     async def _check_minute_cover_trigger(
         self, today: date, current_time: time
     ) -> None:
@@ -443,8 +409,7 @@ class AutoSyncScheduler:
                 t
                 for t in self._tasks
                 if not t.done()
-                and t.get_name()
-                in (f"kline_sync_{today}", f"kline_catchup_{today}", f"minute_cover_{today}")
+                and t.get_name().startswith((f"minute_cover_{today}", f"interval_sync_{today}_"))
             ]
             if active:
                 logger.info(
@@ -502,11 +467,6 @@ class AutoSyncScheduler:
             logger.info(f"窗口结束({end_str}),停止 realtime_sub")
             proc.terminate()
 
-    async def _check_margin_catchup_trigger(
-        self, today: date, current_time: time
-    ) -> None:
-        """已废除(2026-10-22):19:50 并入 0:10 全量 job。保留空壳防旧测试 import 报错。"""
-        return
 
     async def _run_minute_cover_with_cleanup(self, today: date) -> None:
         """0:10 全量 job:非 K 线 → 日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
@@ -649,12 +609,6 @@ class AutoSyncScheduler:
         except Exception as e:
             logger.error(f"日志清理失败: {e}", exc_info=True)
 
-    async def _run_kline_sync_with_cleanup(self, today: date) -> None:
-        """12:00 日间链(2026-10-22 起空转:cleanup 已搬 0:10)。
-
-        白天 TGW 独占给 realtime_sub(9:00-15:30),全量改走 0:10 独立 job。
-        本链保留空壳(触发器+task 命名不变,防旧测试/监控引用断裂)。
-        """
 
     def _on_task_done(self, task: asyncio.Task) -> None:
         """task 完成 callback:从 _tasks 移除 + retrieve exception(2026-07-28 Bug 3)。
@@ -715,7 +669,7 @@ class AutoSyncScheduler:
                     f"触发首次周期性同步（已过去: {elapsed_minutes:.1f} 分钟）"
                 )
                 task = asyncio.create_task(
-                    self._run_kline_sync_with_cleanup(today),
+                    self._run_minute_cover_with_cleanup(today),
                     name=f"interval_sync_{today}_{now.strftime('%H%M')}"
                 )
                 self._tasks.add(task)
@@ -728,7 +682,7 @@ class AutoSyncScheduler:
         if elapsed_minutes >= self._auto_sync_interval:
             logger.debug(f"触发周期性同步（已过去: {elapsed_minutes:.1f} 分钟）")
             task = asyncio.create_task(
-                self._run_kline_sync_with_cleanup(today),
+                self._run_minute_cover_with_cleanup(today),
                 name=f"interval_sync_{today}_{now.strftime('%H%M')}"
             )
             self._tasks.add(task)

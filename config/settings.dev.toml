@@ -34,9 +34,6 @@ log_file_pattern = "./logs/{date}/{time}.log"
 auto_sync_interval_minutes = 30
 auto_sync_first_delay_minutes = 2
 
-kline_trigger_hour = 12
-kline_trigger_minute = 0
-
 calendar_sync_day = 20
 calendar_check_window_start = 20
 calendar_check_window_end = 31

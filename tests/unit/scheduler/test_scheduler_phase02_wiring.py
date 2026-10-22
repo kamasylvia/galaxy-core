@@ -100,22 +100,7 @@ class TestInitHoldsPhase02Jobs:
 
 
 class TestChainOrder:
-    """主链隔离:12:00 日间链空转(cleanup 已搬 0:10,2026-10-22)."""
-
-    @pytest.mark.asyncio
-    async def test_chain_calls_fundflow_run_daily(self):
-        """主链空转:不调 fundflow 也不调 cleanup."""
-        scheduler = AutoSyncScheduler()
-        scheduler._fundflow_job.run_daily = AsyncMock()
-        scheduler._cleanup_job.run = AsyncMock(
-            return_value={"sync_state_deleted": 0, "log_dirs_deleted": 0}
-        )
-
-        today = date(2025, 3, 29)
-        await scheduler._run_kline_sync_with_cleanup(today)
-
-        scheduler._fundflow_job.run_daily.assert_not_called()
-        scheduler._cleanup_job.run.assert_not_called()
+    """0:10 全量 job 顺序(2026-10-22):主链已删,顺序在 0:10 内验证。"""
 
     @pytest.mark.asyncio
     async def test_0010_job_order_fundflow_before_financial(self):

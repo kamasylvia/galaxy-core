@@ -85,99 +85,6 @@ class TestSchedulerLoop:
     """Tests for the main scheduler loop."""
 
     @pytest.mark.asyncio
-    async def test_check_kline_trigger_at_23_00(self):
-        """Triggers K-line sync with cleanup at 23:00 when yesterday was trading day."""
-        scheduler = AutoSyncScheduler()
-        scheduler._run_kline_sync_with_cleanup = AsyncMock()
-        scheduler._running = True
-
-        today = date(2025, 3, 29)  # Saturday
-        yesterday = date(2025, 3, 28)  # Friday
-        trigger_time = time(23, 0)
-
-        # Mock yesterday as trading day
-        scheduler._calendar_store.get_trading_days = AsyncMock(return_value=[yesterday])
-
-        await scheduler._check_kline_trigger(today, trigger_time)
-
-        scheduler._run_kline_sync_with_cleanup.assert_called_once_with(today)
-
-    @pytest.mark.asyncio
-    async def test_no_kline_trigger_when_yesterday_not_trading(self):
-        """Does not trigger K-line sync when yesterday was not a trading day."""
-        scheduler = AutoSyncScheduler()
-        scheduler._run_kline_sync_with_cleanup = AsyncMock()
-        scheduler._running = True
-
-        today = date(2025, 3, 30)  # Sunday
-        trigger_time = time(23, 0)
-
-        # Mock yesterday (Saturday) as non-trading day
-        scheduler._calendar_store.get_trading_days = AsyncMock(return_value=[])
-
-        await scheduler._check_kline_trigger(today, trigger_time)
-
-        scheduler._run_kline_sync_with_cleanup.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_no_kline_trigger_at_22_00(self):
-        """Does not trigger K-line sync at 22:00."""
-        scheduler = AutoSyncScheduler()
-        scheduler._run_kline_sync_with_cleanup = AsyncMock()
-
-        today = date(2025, 3, 28)
-        non_trigger_time = time(22, 0)
-
-        await scheduler._check_kline_trigger(today, non_trigger_time)
-
-        scheduler._run_kline_sync_with_cleanup.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_check_calendar_trigger_at_00_00(self):
-        """Triggers calendar check at 00:00."""
-        scheduler = AutoSyncScheduler()
-        scheduler._calendar_job.run = AsyncMock()
-        scheduler._running = True
-
-        today = date(2025, 12, 20)
-        trigger_time = time(0, 0)
-
-        await scheduler._check_calendar_trigger(today, trigger_time)
-
-        scheduler._calendar_job.run.assert_called_once_with(today)
-
-    @pytest.mark.asyncio
-    async def test_no_calendar_trigger_at_01_00(self):
-        """Does not trigger calendar check at 01:00."""
-        scheduler = AutoSyncScheduler()
-        scheduler._calendar_job.run = AsyncMock()
-
-        today = date(2025, 12, 20)
-        non_trigger_time = time(1, 0)
-
-        await scheduler._check_calendar_trigger(today, non_trigger_time)
-
-        scheduler._calendar_job.run.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_creates_asyncio_task(self):
-        """Creates asyncio.Task for sync jobs."""
-        scheduler = AutoSyncScheduler()
-        scheduler._run_kline_sync_with_cleanup = AsyncMock()
-        scheduler._running = True
-
-        today = date(2025, 3, 29)
-        yesterday = date(2025, 3, 28)
-        trigger_time = time(23, 0)
-
-        scheduler._calendar_store.get_trading_days = AsyncMock(return_value=[yesterday])
-
-        await scheduler._check_kline_trigger(today, trigger_time)
-
-        # Task should be added to _tasks set
-        assert len(scheduler._tasks) == 1
-
-    @pytest.mark.asyncio
     async def test_stop_cancels_tasks(self):
         """Stop cancels all pending tasks."""
         scheduler = AutoSyncScheduler()
@@ -293,53 +200,8 @@ class TestSignalAudit:
         # _running 保持 True(未触发退出,只是没注册审计)
         assert scheduler._running is True
 
-
 class TestPostSyncCleanup:
-    """Tests for 12:00 日间链(2026-10-22 起空转:cleanup 已搬 0:10).
-
-    白天 TGW 独占给 realtime_sub,全量改走 0:10 独立 job。
-    主链不调任何 job。
-    """
-
-    @pytest.mark.asyncio
-    async def test_run_kline_sync_with_cleanup(self):
-        """主链空转(cleanup 已搬 0:10),无 SDK 调用,不调任何 job。"""
-        scheduler = AutoSyncScheduler()
-        scheduler._kline_job.run_day = AsyncMock()
-        scheduler._kline_job.run_minute = AsyncMock()
-        scheduler._industry_index_job.run_daily = AsyncMock()
-        scheduler._exchange_index_job.run_daily = AsyncMock()
-        scheduler._refdata_job.run_stock_basic = AsyncMock()
-        scheduler._fundflow_job.run_daily = AsyncMock()
-        scheduler._financial_job.run = AsyncMock()
-        scheduler._cleanup_job.run = AsyncMock(
-            return_value={"sync_state_deleted": 0, "log_dirs_deleted": 0}
-        )
-
-        today = date(2025, 3, 29)
-
-        await scheduler._run_kline_sync_with_cleanup(today)
-
-        # 全量已搬走:主链空转,连 cleanup 都不调
-        scheduler._kline_job.run_day.assert_not_called()
-        scheduler._kline_job.run_minute.assert_not_called()
-        scheduler._industry_index_job.run_daily.assert_not_called()
-        scheduler._exchange_index_job.run_daily.assert_not_called()
-        scheduler._refdata_job.run_stock_basic.assert_not_called()
-        scheduler._fundflow_job.run_daily.assert_not_called()
-        scheduler._financial_job.run.assert_not_called()
-        scheduler._cleanup_job.run.assert_not_called()
-    async def test_chain_isolation_step_failure_does_not_block_others(self):
-        """回归:主链空转永不抛(无 SDK 调用,无失败面)。"""
-        scheduler = AutoSyncScheduler()
-        scheduler._cleanup_job.run = AsyncMock(side_effect=RuntimeError("clean boom"))
-
-        today = date(2025, 3, 29)
-
-        # 不应抛异常(空转,连 cleanup 都不调)
-        await scheduler._run_kline_sync_with_cleanup(today)
-
-        scheduler._cleanup_job.run.assert_not_called()
+    """12:00 主链已删除(2026-10-22):相关测试移入 0:10 job 顺序测试。"""
 
     @pytest.mark.asyncio
     async def test_on_task_done_logs_exception(self, caplog):
@@ -474,10 +336,10 @@ class TestSchedulerTimezone:
     async def test_run_forever_uses_cst_for_trigger(self, monkeypatch):
         """run_forever 用 _now_cst() 而非 datetime.now() 取当前时间做触发判断。
 
-        场景:服务器 UTC 时间 16:10(= 北京时间次日 00:10),配置 kline_trigger=00:10。
+        场景:服务器 UTC 时间 16:10(= 北京时间次日 00:10),配置 minute_cover=00:10。
         若用 datetime.now()(UTC)则 16:10 != 00:10 不触发(bug);用 _now_cst() 则
         北京 00:10 == 00:10 触发(正确)。本测试 mock _now_cst 返回固定北京 00:10
-        时刻,验证 _check_kline_trigger 收到的是 00:10 而非 16:10。
+        时刻,验证 _check_minute_cover_trigger 收到的是 00:10 而非 16:10。
         """
         scheduler = AutoSyncScheduler()
         scheduler._running = True
@@ -491,11 +353,12 @@ class TestSchedulerTimezone:
 
         captured: dict = {}
 
-        async def fake_check_kline(today, current_time):
+        async def fake_check_cover(today, current_time):
             captured["today"] = today
             captured["time"] = current_time
 
-        scheduler._check_kline_trigger = fake_check_kline  # type: ignore[assignment]
+        scheduler._check_minute_cover_trigger = fake_check_cover  # type: ignore[assignment]
+        scheduler._check_realtime_sub_window = AsyncMock()  # type: ignore[assignment]
         scheduler._check_calendar_trigger = AsyncMock()  # type: ignore[assignment]
 
         # 跑一次循环后立即停止(模拟单次 tick)
@@ -509,29 +372,11 @@ class TestSchedulerTimezone:
 
         await scheduler.run_forever()
 
-        # run_forever 应把北京 00:10 传给 _check_kline_trigger
+        # run_forever 应把北京 00:10 传给 _check_minute_cover_trigger
         assert captured["time"].hour == 0
         assert captured["time"].minute == 10
         assert captured["today"] == date(2025, 3, 29)
 
-class TestKlineCatchupTrigger:
-    """已废除(2026-10-22):16:10 日间补同步并入 0:10 全量 job。
-
-    保留空类防旧引用报错,行为:触发器为空壳,调用无效果。
-    """
-
-    @pytest.mark.asyncio
-    async def test_catchup_trigger_is_noop(self):
-        """废触发器调用无效果(不查 calendar/state,不起 task)."""
-        scheduler = AutoSyncScheduler()
-        scheduler._calendar_store.get_trading_days = AsyncMock()
-        scheduler._state_manager.is_synced = AsyncMock()
-
-        await scheduler._check_kline_catchup_trigger(date(2025, 3, 29), time(7, 10))
-
-        scheduler._calendar_store.get_trading_days.assert_not_called()
-        scheduler._state_manager.is_synced.assert_not_called()
-        assert len(scheduler._tasks) == 0
 
 
 class TestTaskNaming:
@@ -539,22 +384,21 @@ class TestTaskNaming:
 
     @pytest.mark.asyncio
     async def test_kline_task_has_descriptive_name(self):
-        """K-line sync task has descriptive name."""
+        """0:10 全量 task 有描述性命名."""
         scheduler = AutoSyncScheduler()
-        scheduler._run_kline_sync_with_cleanup = AsyncMock()
         scheduler._running = True
 
         today = date(2025, 3, 29)
         yesterday = date(2025, 3, 28)
-        trigger_time = time(23, 0)
+        trigger_time = time(0, 10)
 
         scheduler._calendar_store.get_trading_days = AsyncMock(return_value=[yesterday])
 
-        await scheduler._check_kline_trigger(today, trigger_time)
+        await scheduler._check_minute_cover_trigger(today, trigger_time)
 
         # Task name should contain date
         task = list(scheduler._tasks)[0]
-        assert "kline" in task.get_name()
+        assert "minute_cover" in task.get_name()
         assert "2025" in task.get_name()
 
     @pytest.mark.asyncio
@@ -896,22 +740,3 @@ class TestSchedulerIndexAutoChain:
         assert daily_idx < dims_idx
 
 
-class TestMarginCatchupTrigger:
-    """已废除(2026-10-22):19:50 晚间补同步并入 0:10 全量 job。
-
-    保留空类防旧引用报错,行为:触发器为空壳,调用无效果。
-    """
-
-    @pytest.mark.asyncio
-    async def test_catchup_trigger_is_noop(self):
-        """废触发器调用无效果(不查 calendar/state,不起 task)."""
-        scheduler = AutoSyncScheduler()
-        scheduler._calendar_store.get_trading_days = AsyncMock()
-        scheduler._fundflow_job.run_daily = AsyncMock()
-        scheduler._industry_index_job.run_daily = AsyncMock()
-
-        await scheduler._check_margin_catchup_trigger(date(2025, 3, 29), time(19, 50))
-
-        scheduler._calendar_store.get_trading_days.assert_not_called()
-        scheduler._fundflow_job.run_daily.assert_not_awaited()
-        scheduler._industry_index_job.run_daily.assert_not_awaited()

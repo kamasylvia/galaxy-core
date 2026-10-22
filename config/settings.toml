@@ -50,10 +50,8 @@ enable_separate_log_files = true
 log_file_pattern = "./logs/{date}/{time}.log"
 
 [scheduler]
-# 12:00 日间链(2026-10-22 起仅 cleanup,不碰 SDK;白天 TGW 独占给 realtime_sub)。
+# 白天零 SDK 调用:realtime_sub 独占 TGW(9:00-15:30)。
 # 全量改走 0:10 独立 job(minute_cover_*),残留追扫往回 minute_rescan_days 天。
-kline_trigger_hour = 12
-kline_trigger_minute = 0
 
 # 交易日历同步：每年 12 月 20 日 ~ 31 日检查并同步下一年日历
 calendar_sync_day = 20
