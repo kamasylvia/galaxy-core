@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """测试日期格式修复功能"""
 
-from galaxy_db_sync.shared_kernel.utils.time_parser import convert_date_string_to_int
+from galaxy_core.shared_kernel.utils.time_parser import convert_date_string_to_int
 
 
 def test_date_conversion():

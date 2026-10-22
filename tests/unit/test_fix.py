@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, os.path.join(os.getcwd(), "src"))
 
 try:
-    from galaxy_db_sync.shared_kernel.utils.time_parser import (
+    from galaxy_core.shared_kernel.utils.time_parser import (
         convert_date_string_to_int,
     )
 

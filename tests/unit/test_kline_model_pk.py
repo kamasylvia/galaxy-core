@@ -11,7 +11,7 @@
 import pytest
 from datetime import datetime
 from sqlalchemy import inspect
-from galaxy_db_sync.database.models.kline import (
+from galaxy_core.database.models.kline import (
     BaseKline,
     KlineDay,
     KlineMin1,
@@ -23,10 +23,13 @@ from galaxy_db_sync.database.models.kline import (
 class TestCompositePrimaryKey:
     """测试组合主键定义."""
 
-    def test_base_kline_has_no_id_column(self):
-        """BaseKline 不应有 id 列."""
-        # 检查 BaseKline 的列定义
-        assert not hasattr(BaseKline, "id") or not getattr(BaseKline, "id", None)
+    def test_base_kline_id_is_not_primary_key(self):
+        """BaseKline 的 id 是 NocoDB 系统列(普通列,非 ORM 主键)."""
+        mapper = inspect(KlineDay)
+        id_col = mapper.columns.get("id")
+        assert id_col is not None  # nocodb 形态:系统列存在
+        pk_columns = [col.name for col in mapper.primary_key]
+        assert "id" not in pk_columns
 
     def test_base_kline_symbol_is_primary_key(self):
         """symbol 列应是主键."""
@@ -77,11 +80,11 @@ class TestKlineSubclasses:
                 # 允许其他非索引配置
 
     def test_kline_day_table_name(self):
-        """KlineDay 表名正确."""
+        """KlineDay 表名正确(英文表名)."""
         assert KlineDay.__tablename__ == "kline_day"
 
     def test_kline_min1_table_name(self):
-        """KlineMin1 表名正确."""
+        """KlineMin1 表名正确(英文表名)."""
         assert KlineMin1.__tablename__ == "kline_min1"
 
 
@@ -92,7 +95,7 @@ class TestKlineServiceNoIdReference:
         """get_available_intervals_for_symbol 应使用 func.count() 而非 func.count(model.id)."""
         import ast
         import inspect as insp
-        from galaxy_db_sync.database.services.kline import (
+        from galaxy_core.database.services.kline import (
             get_available_intervals_for_symbol,
         )
 

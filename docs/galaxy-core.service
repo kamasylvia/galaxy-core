@@ -1,0 +1,45 @@
+[Unit]
+# Galaxy DB Sync - 自动同步调度器 systemd user service
+# 部署前置:
+#   1. 项目根有 .env 文件,含 INFISICAL_CLIENT_ID/SECRET/PROJECT_ID 三项 MI 凭证
+#      (在 infisical 后台 Machine Identities 创建 Universal Auth 拿 client_id/secret)
+#      + 业务凭证兜底(GALAXY_*/DB_*,生产可空,SDK 会从 infisical 拉)
+#   2. 项目根有 .infisical.json(workspaceId,SDK 用于定位 infisical 项目)
+# 部署：cp docs/galaxy-core.service ~/.config/systemd/user/
+#       systemctl --user daemon-reload
+#       systemctl --user enable --now galaxy-core.service
+# 开机自启（不登录也跑）：sudo loginctl enable-linger <user>
+Description=Galaxy DB Sync - 自动同步调度器
+Documentation=file:///home/laniakea/development/galaxy-quant/galaxy-core/AGENTS.md
+# scheduler 进程内 InfisicalConfig 用 MI 凭证换 access_token 拉 secrets,需网络
+After=network-online.target
+Wants=network-online.target
+# 崩溃后 5 分钟内重启超过 5 次则停止，避免死循环（user systemd 此项放 [Unit]）
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# 部署时按实际路径修改 WorkingDirectory / EnvironmentFile / ExecStart
+WorkingDirectory=/home/laniakea/development/galaxy-quant/galaxy-core
+# NixOS: systemd 不继承 shell 的 nix-ld 环境，需显式注入库路径（libstdc++ 等）
+# 非 NixOS 环境可删除此行
+Environment=LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib
+# .env 投递 INFISICAL_CLIENT_ID/SECRET/PROJECT_ID(MI 凭证,SDK 启动用) +
+# 业务凭证(GALAXY_*/DB_*,SDK 拉取失败时兜底)。详见 AGENTS.md infisical 集成段。
+EnvironmentFile=/home/laniakea/development/galaxy-quant/galaxy-core/.env
+# scheduler 进程内 InfisicalConfig.initialize() 用 MI 凭证换 access_token,
+# 再拉业务 secrets 到 os.environ,无需 CLI 包装。
+ExecStart=/home/laniakea/development/galaxy-quant/galaxy-core/.venv/bin/python -m galaxy_core.application.scheduler
+# Restart=always:无论正常退出(exit 0,如收到 SIGINT)还是崩溃(非 0),都自动重启。
+# 2026-06-26:scheduler 曾在无人操作下收到 SIGINT 后 exit 0,on-failure 不重启导致同步中断。
+# always 确保任何意外退出都能自愈(配合上面的 StartLimitBurst 防死循环)。
+Restart=always
+RestartSec=10s
+# 标准输出/错误进 journald（可 journalctl --user -u galaxy-core 查看）
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=galaxy-core
+
+[Install]
+WantedBy=default.target

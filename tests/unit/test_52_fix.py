@@ -1,4 +1,4 @@
-from galaxy_db_sync.shared_kernel.utils import infer_security_type
+from galaxy_core.shared_kernel.utils import infer_security_type
 
 # 测试52开头的代码
 codes_to_test = ["520990.SH", "520760.SH", "520890.SH"]

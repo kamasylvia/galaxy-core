@@ -3,10 +3,11 @@
 测试周期边界检查器的各项功能。
 """
 
+import pytest
 from datetime import date
 
-from galaxy_db_sync.shared_kernel.enums.interval import Interval
-from galaxy_db_sync.shared_kernel.utils.interval_boundary_checker import IntervalBoundaryChecker
+from galaxy_core.shared_kernel.enums.interval import Interval
+from galaxy_core.shared_kernel.utils.interval_boundary_checker import IntervalBoundaryChecker
 
 
 class TestIntervalBoundaryCheckerInit:
@@ -17,10 +18,10 @@ class TestIntervalBoundaryCheckerInit:
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
         assert checker.trading_calendar is mock_trading_calendar
 
-    def test_init_without_trading_calendar(self):
-        """测试不提供交易日历时自动创建。"""
-        checker = IntervalBoundaryChecker()
-        assert checker.trading_calendar is not None
+    def test_init_requires_trading_calendar(self):
+        """测试不提供交易日历时报 TypeError。"""
+        with pytest.raises(TypeError):
+            IntervalBoundaryChecker()
 
 
 class TestIsLongInterval:
@@ -246,159 +247,176 @@ class TestShortIntervalComplete:
 class TestGetWeekEndDate:
     """测试获取周结束日期。"""
 
-    def test_week_end_from_monday(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_week_end_from_monday(self, mock_trading_calendar):
         """从周一开始获取周结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-03-24 是周一
         # 周末是 2025-03-30（周日），最后一个交易日是 2025-03-28（周五）
-        result = checker.get_interval_end_date(Interval.WEEK, date(2025, 3, 24))
+        result = await checker.get_interval_end_date_async(Interval.WEEK, date(2025, 3, 24))
         assert result == date(2025, 3, 28)
 
-    def test_week_end_from_friday(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_week_end_from_friday(self, mock_trading_calendar):
         """从周五获取周结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-03-28 是周五
-        result = checker.get_interval_end_date(Interval.WEEK, date(2025, 3, 28))
+        result = await checker.get_interval_end_date_async(Interval.WEEK, date(2025, 3, 28))
         assert result == date(2025, 3, 28)
 
-    def test_week_end_from_sunday(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_week_end_from_sunday(self, mock_trading_calendar):
         """从周日获取周结束日期（应该返回同一周的周五）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-03-30 是周日
-        result = checker.get_interval_end_date(Interval.WEEK, date(2025, 3, 30))
+        result = await checker.get_interval_end_date_async(Interval.WEEK, date(2025, 3, 30))
         assert result == date(2025, 3, 28)
 
 
 class TestGetMonthEndDate:
     """测试获取月结束日期。"""
 
-    def test_month_end_february_non_leap_year(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_month_end_february_non_leap_year(self, mock_trading_calendar):
         """非闰年2月结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-02 有 28 天，最后一天是周五
-        result = checker.get_interval_end_date(Interval.MONTH, date(2025, 2, 15))
+        result = await checker.get_interval_end_date_async(Interval.MONTH, date(2025, 2, 15))
         assert result == date(2025, 2, 28)
 
-    def test_month_end_february_leap_year(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_month_end_february_leap_year(self, mock_trading_calendar):
         """闰年2月结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2024-02 有 29 天，最后一天是周四
-        result = checker.get_interval_end_date(Interval.MONTH, date(2024, 2, 15))
+        result = await checker.get_interval_end_date_async(Interval.MONTH, date(2024, 2, 15))
         assert result == date(2024, 2, 29)
 
-    def test_month_end_31_days(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_month_end_31_days(self, mock_trading_calendar):
         """31天的月份结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-03 有 31 天，最后一天是周一
-        result = checker.get_interval_end_date(Interval.MONTH, date(2025, 3, 15))
+        result = await checker.get_interval_end_date_async(Interval.MONTH, date(2025, 3, 15))
         assert result == date(2025, 3, 31)
 
-    def test_month_end_30_days(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_month_end_30_days(self, mock_trading_calendar):
         """30天的月份结束日期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025-04 有 30 天，最后一天是周三
-        result = checker.get_interval_end_date(Interval.MONTH, date(2025, 4, 15))
+        result = await checker.get_interval_end_date_async(Interval.MONTH, date(2025, 4, 15))
         assert result == date(2025, 4, 30)
 
 
 class TestGetSeasonEndDate:
     """测试获取季结束日期。"""
 
-    def test_q1_end_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_q1_end_date(self, mock_trading_calendar):
         """Q1结束日期（3月31日）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025 Q1 结束日期
-        result = checker.get_interval_end_date(Interval.SEASON, date(2025, 1, 15))
+        result = await checker.get_interval_end_date_async(Interval.SEASON, date(2025, 1, 15))
         assert result == date(2025, 3, 31)
 
-    def test_q2_end_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_q2_end_date(self, mock_trading_calendar):
         """Q2结束日期（6月30日）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025 Q2 结束日期
-        result = checker.get_interval_end_date(Interval.SEASON, date(2025, 4, 15))
+        result = await checker.get_interval_end_date_async(Interval.SEASON, date(2025, 4, 15))
         assert result == date(2025, 6, 30)
 
-    def test_q3_end_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_q3_end_date(self, mock_trading_calendar):
         """Q3结束日期（9月30日）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025 Q3 结束日期
-        result = checker.get_interval_end_date(Interval.SEASON, date(2025, 7, 15))
+        result = await checker.get_interval_end_date_async(Interval.SEASON, date(2025, 7, 15))
         assert result == date(2025, 9, 30)
 
-    def test_q4_end_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_q4_end_date(self, mock_trading_calendar):
         """Q4结束日期（12月31日）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 2025 Q4 结束日期
-        result = checker.get_interval_end_date(Interval.SEASON, date(2025, 10, 15))
+        result = await checker.get_interval_end_date_async(Interval.SEASON, date(2025, 10, 15))
         assert result == date(2025, 12, 31)
 
 
 class TestGetYearEndDate:
     """测试获取年结束日期。"""
 
-    def test_year_end_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_year_end_date(self, mock_trading_calendar):
         """年结束日期（12月31日）。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
-        result = checker.get_interval_end_date(Interval.YEAR, date(2025, 6, 15))
+        result = await checker.get_interval_end_date_async(Interval.YEAR, date(2025, 6, 15))
         assert result == date(2025, 12, 31)
 
 
 class TestGetLastCompleteIntervalEnd:
     """测试获取最后一个已结束周期的结束日期。"""
 
-    def test_last_complete_week_in_mid_week(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_last_complete_week_in_mid_week(self, mock_trading_calendar):
         """周中获取上周结束日期。"""
         # 假设今天是 2025-03-26（周三）
         today = date(2025, 3, 26)
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 上周结束日期应该是 2025-03-21（周五）
-        result = checker.get_last_complete_interval_end(Interval.WEEK, reference_date=today, today=today)
+        result = await checker.get_last_complete_interval_end_async(Interval.WEEK, reference_date=today, today=today)
         assert result == date(2025, 3, 21)
 
-    def test_last_complete_month_in_mid_month(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_last_complete_month_in_mid_month(self, mock_trading_calendar):
         """月中获取上月结束日期。"""
         # 假设今天是 2025-03-15
         today = date(2025, 3, 15)
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 上月结束日期应该是 2025-02-28
-        result = checker.get_last_complete_interval_end(Interval.MONTH, reference_date=today, today=today)
+        result = await checker.get_last_complete_interval_end_async(Interval.MONTH, reference_date=today, today=today)
         assert result == date(2025, 2, 28)
 
-    def test_last_complete_season_in_q1(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_last_complete_season_in_q1(self, mock_trading_calendar):
         """Q1获取Q4结束日期。"""
         # 假设今天是 2025-02-15
         today = date(2025, 2, 15)
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # Q4结束日期应该是 2024-12-31
-        result = checker.get_last_complete_interval_end(Interval.SEASON, reference_date=today, today=today)
+        result = await checker.get_last_complete_interval_end_async(Interval.SEASON, reference_date=today, today=today)
         assert result == date(2024, 12, 31)
 
-    def test_last_complete_year_in_mid_year(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_last_complete_year_in_mid_year(self, mock_trading_calendar):
         """年中获取上年结束日期。"""
         # 假设今天是 2025-06-15
         today = date(2025, 6, 15)
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
         # 上年结束日期应该是 2024-12-31
-        result = checker.get_last_complete_interval_end(Interval.YEAR, reference_date=today, today=today)
+        result = await checker.get_last_complete_interval_end_async(Interval.YEAR, reference_date=today, today=today)
         assert result == date(2024, 12, 31)
 
-    def test_last_complete_interval_with_reference_date(self, mock_trading_calendar):
+    @pytest.mark.asyncio
+    async def test_last_complete_interval_with_reference_date(self, mock_trading_calendar):
         """使用参考日期获取已结束周期。"""
         checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
 
@@ -407,19 +425,19 @@ class TestGetLastCompleteIntervalEnd:
         today = date(2025, 3, 26)
 
         # 周线：上周结束日期
-        result = checker.get_last_complete_interval_end(Interval.WEEK, reference_date, today)
+        result = await checker.get_last_complete_interval_end_async(Interval.WEEK, reference_date, today)
         assert result == date(2025, 3, 21)
 
         # 月线：上月结束日期
-        result = checker.get_last_complete_interval_end(Interval.MONTH, reference_date, today)
+        result = await checker.get_last_complete_interval_end_async(Interval.MONTH, reference_date, today)
         assert result == date(2025, 2, 28)
 
         # 季线：Q4结束日期
-        result = checker.get_last_complete_interval_end(Interval.SEASON, reference_date, today)
+        result = await checker.get_last_complete_interval_end_async(Interval.SEASON, reference_date, today)
         assert result == date(2024, 12, 31)
 
         # 年线：上年结束日期
-        result = checker.get_last_complete_interval_end(Interval.YEAR, reference_date, today)
+        result = await checker.get_last_complete_interval_end_async(Interval.YEAR, reference_date, today)
         assert result == date(2024, 12, 31)
 
 
@@ -471,8 +489,12 @@ class TestEdgeCases:
         # 2024-02-29 是闰年2月最后一天
         assert checker.is_interval_complete(Interval.MONTH, date(2024, 2, 15), today) is False
 
-        # 月结束日期应该是 2024-02-29
-        result = checker.get_interval_end_date(Interval.MONTH, date(2024, 2, 15))
+    @pytest.mark.asyncio
+    async def test_month_end_leap_year(self, mock_trading_calendar):
+        """闰年2月月结束日期。"""
+        checker = IntervalBoundaryChecker(trading_calendar=mock_trading_calendar)
+
+        result = await checker.get_interval_end_date_async(Interval.MONTH, date(2024, 2, 15))
         assert result == date(2024, 2, 29)
 
     def test_year_boundary(self, mock_trading_calendar):
@@ -496,9 +518,6 @@ class TestEdgeCases:
         assert checker.is_interval_complete(Interval.WEEK, date(2025, 3, 30), today) is True
         # 2025-03-31 是本周一，所在周未完成
         assert checker.is_interval_complete(Interval.WEEK, date(2025, 3, 31), today) is False
-
-
-import pytest
 
 
 class TestIsLastTradingDayOfPeriod:

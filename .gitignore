@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# 测试 / 质量
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.benchmarks/
+
+# 环境与密钥（永不提交）
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# 运行时数据与日志
+data/
+logs/
+cache/
+
+# 私有 wheel（手动放置，不入库）
+wheels/
+
+# 生成产物
+src/galaxy_core/gen/
+
+# Nix
+result
+result-*
+.direnv/
+
+# 会话本地与产物(2026-09-28)
+.zcode/
+amazingdata_mcp.log
+docs/example-notes.md
+
+# 官方 SDK 手册（银河内网文档，不公开）
+docs/AmazingData/
+
+# 内部台账（巡检/审计/任务，不公开）
+.work/

@@ -1,6 +1,6 @@
 import unittest
 
-from galaxy_db_sync.shared_kernel.utils.time_parser import (
+from galaxy_core.shared_kernel.utils.time_parser import (
     get_default_start_date_for_symbol,
     resolve_default_start_date,
 )

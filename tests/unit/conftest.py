@@ -12,13 +12,13 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Register galaxy_db_sync packages before AmazingData import
-SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "galaxy_db_sync"
+# Register galaxy_core packages before AmazingData import
+SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "galaxy_core"
 
 for package_name, package_path in {
-    "galaxy_db_sync": SRC_ROOT,
-    "galaxy_db_sync.amazing_data": SRC_ROOT / "amazing_data",
-    "galaxy_db_sync.amazing_data.api": SRC_ROOT / "amazing_data" / "api",
+    "galaxy_core": SRC_ROOT,
+    "galaxy_core.amazing_data": SRC_ROOT / "amazing_data",
+    "galaxy_core.amazing_data.api": SRC_ROOT / "amazing_data" / "api",
 }.items():
     if package_name not in sys.modules:
         package = types.ModuleType(package_name)
@@ -26,11 +26,20 @@ for package_name, package_path in {
         sys.modules[package_name] = package
 
 # Mock config_loader to avoid toml dependency
-if "galaxy_db_sync.shared_kernel.utils.config_loader" not in sys.modules:
-    config_loader = types.ModuleType("galaxy_db_sync.shared_kernel.utils.config_loader")
-    config_loader.get_config = lambda *args, **kwargs: {}
+# get_config(section, key, default=None) — return default if provided, else {}
+if "galaxy_core.shared_kernel.utils.config_loader" not in sys.modules:
+    config_loader = types.ModuleType("galaxy_core.shared_kernel.utils.config_loader")
+
+    def _mock_get_config(*args, **kwargs):
+        # get_config(section, key, default=None)
+        if len(args) >= 3:
+            return args[2]
+        return kwargs.get("default", None)
+
+    config_loader.get_config = _mock_get_config
     config_loader.get_section = lambda *args, **kwargs: {}
-    sys.modules["galaxy_db_sync.shared_kernel.utils.config_loader"] = config_loader
+    config_loader.load_config_dict = lambda *args, **kwargs: {}
+    sys.modules["galaxy_core.shared_kernel.utils.config_loader"] = config_loader
 
 # Mock AmazingData SDK
 if "AmazingData" not in sys.modules:
@@ -117,6 +126,20 @@ def mock_trading_calendar():
     calendar.is_trading_day.side_effect = is_trading_day
     calendar.get_previous_trading_day.side_effect = get_previous_trading_day
     calendar.get_next_trading_day.side_effect = get_next_trading_day
+
+    # Async versions for IntervalBoundaryChecker
+    async def async_is_trading_day(d: date) -> bool:
+        return is_trading_day(d)
+
+    async def async_get_previous_trading_day(d: date) -> date:
+        return get_previous_trading_day(d)
+
+    async def async_get_next_trading_day(d: date) -> date:
+        return get_next_trading_day(d)
+
+    calendar.is_trading_day_async = AsyncMock(side_effect=async_is_trading_day)
+    calendar.get_previous_trading_day_async = AsyncMock(side_effect=async_get_previous_trading_day)
+    calendar.get_next_trading_day_async = AsyncMock(side_effect=async_get_next_trading_day)
 
     return calendar
 

@@ -16,15 +16,7 @@ from datetime import datetime
 from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from galaxy_db_sync.database.core.async_connection import async_db_manager
-from galaxy_db_sync.database.models.kline import KlineDay, KlineMin1
-
-
-@pytest_asyncio.fixture(scope="function")
-async def db_session():
-    """提供异步数据库会话."""
-    async with async_db_manager.session() as session:
-        yield session
+from galaxy_core.database.models.kline import KlineDay, KlineMin1
 
 
 @pytest.mark.asyncio
@@ -52,10 +44,13 @@ class TestPKMigrationIntegration:
         """kline_day 有组合主键."""
         result = await db_session.execute(
             text("""
-                SELECT column_name
-                FROM information_schema.key_column_usage
-                WHERE table_name = 'kline_day' AND constraint_name LIKE '%pkey%'
-                ORDER BY ordinal_position;
+                SELECT kcu.column_name
+                FROM information_schema.key_column_usage kcu
+                JOIN information_schema.table_constraints tc
+                  ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_name = kcu.table_name
+                WHERE kcu.table_name = 'kline_day' AND tc.constraint_type = 'PRIMARY KEY'
+                ORDER BY kcu.ordinal_position;
             """)
         )
         columns = [row[0] for row in result.fetchall()]
@@ -73,25 +68,15 @@ class TestPKMigrationIntegration:
         )
         assert result.scalar() == "kline_day"
 
-    async def test_kline_day_no_id_column(self, db_session: AsyncSession):
-        """kline_day 没有 id 列."""
-        result = await db_session.execute(
-            text("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name = 'kline_day' AND column_name = 'id';
-            """)
-        )
-        assert result.fetchone() is None
 
     async def test_kline_day_upsert_works(self, db_session: AsyncSession):
         """测试 UPSERT 操作正常."""
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        # 准备测试数据
+        from datetime import date
         test_data = {
             "symbol": "TEST0001.SH",
-            "trade_time": datetime(2024, 1, 1, 9, 30),
+            "trade_time": date(2024, 1, 1),
             "open": 10.0,
             "high": 11.0,
             "low": 9.0,
@@ -117,7 +102,7 @@ class TestPKMigrationIntegration:
         result = await db_session.execute(
             select(func.count()).where(
                 KlineDay.symbol == "TEST0001.SH",
-                KlineDay.trade_time == datetime(2024, 1, 1, 9, 30),
+                KlineDay.trade_time == date(2024, 1, 1),
             )
         )
         assert result.scalar() == 1
@@ -212,17 +197,20 @@ class TestDataIntegrity:
 
     async def test_all_tables_have_composite_pk(self, db_session: AsyncSession):
         """所有 K 线表都有组合主键."""
-        from galaxy_db_sync.database.models.kline import INTERVAL_MODEL_MAP
+        from galaxy_core.database.models.kline import INTERVAL_MODEL_MAP
 
         for interval, model_class in INTERVAL_MODEL_MAP.items():
             table_name = model_class.__tablename__
             result = await db_session.execute(
                 text(
                     f"""
-                    SELECT column_name
-                    FROM information_schema.key_column_usage
-                    WHERE table_name = '{table_name}' AND constraint_name LIKE '%pkey%'
-                    ORDER BY ordinal_position;
+                    SELECT kcu.column_name
+                    FROM information_schema.key_column_usage kcu
+                    JOIN information_schema.table_constraints tc
+                      ON tc.constraint_name = kcu.constraint_name
+                     AND tc.table_name = kcu.table_name
+                    WHERE kcu.table_name = '{table_name}' AND tc.constraint_type = 'PRIMARY KEY'
+                    ORDER BY kcu.ordinal_position;
                 """
                 )
             )

@@ -1,0 +1,261 @@
+{
+  "name": "A股",
+  "img": "https://x0.ifengimg.com/ucms/2025_16/A25F85EA69929D10BE12190E20264C43657282E1_size230_w1013_h584.jpg",
+  "img_dark": "",
+  "img_light": "",
+  "description": "A股数据。",
+  "allowCustomization": true,
+  "tabs": {
+    "mystock": {
+      "id": "mystock",
+      "name": "自选股",
+      "layout": [
+        {
+          "i": "/api/v1/cn/quote",
+          "x": 0,
+          "y": 2,
+          "w": 40,
+          "h": 8
+        }
+      ]
+    },
+    "overview": {
+      "id": "overview",
+      "name": "简况",
+      "layout": [
+        {
+          "i": "/api/v1/cn/key_metrics",
+          "x": 0,
+          "y": 2,
+          "w": 13,
+          "h": 21,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            },
+            "columnState": {
+              "default": {
+                "columnOrder": {
+                  "orderedColIds": [
+                    "fact",
+                    "value"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "i": "/api/v1/cn/news",
+          "x": 13,
+          "y": 2,
+          "w": 27,
+          "h": 21,
+          "state": {
+            "params": {
+              "limit": "20"
+            },
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            },
+            "columnState": {
+              "default": {
+                "columnPinning": {
+                  "leftColIds": [
+                    "date"
+                  ],
+                  "rightColIds": []
+                },
+                "columnOrder": {
+                  "orderedColIds": [
+                    "title",
+                    "author",
+                    "date",
+                    "sentiment",
+                    "url",
+                    "source"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "financials": {
+      "id": "financials",
+      "name": "财务",
+      "layout": [
+        {
+          "i": "/api/v1/cn/balance",
+          "x": 0,
+          "y": 16,
+          "w": 40,
+          "h": 15,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            },
+            "columnState": {
+              "default": {
+                "columnOrder": {
+                  "orderedColIds": [
+                    "metric",
+                    "2025-01-26",
+                    "2024-01-28",
+                    "2023-01-29",
+                    "2022-01-30",
+                    "2021-01-31",
+                    "2020-01-26",
+                    "2019-01-27",
+                    "2018-01-28",
+                    "2017-01-29",
+                    "2016-01-31"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "i": "/api/v1/cn/cash_flow",
+          "x": 0,
+          "y": 32,
+          "w": 40,
+          "h": 15,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            },
+            "columnState": {
+              "default": {
+                "columnOrder": {
+                  "orderedColIds": [
+                    "metric",
+                    "2025-01-26",
+                    "2024-01-28",
+                    "2023-01-29",
+                    "2022-01-30",
+                    "2021-01-31",
+                    "2020-01-26",
+                    "2019-01-27",
+                    "2018-01-28",
+                    "2017-01-29",
+                    "2016-01-31"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "i": "/api/v1/cn/income",
+          "x": 0,
+          "y": 45,
+          "w": 40,
+          "h": 15,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            }
+          }
+        },
+        {
+          "i": "/api/v1/cn/financial_data",
+          "x": 0,
+          "y": 2,
+          "w": 40,
+          "h": 15,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "groupedColumn"
+            }
+          }
+        }
+      ]
+    },
+    "stock-prices": {
+      "id": "stock-prices",
+      "name": "股价",
+      "layout": [
+        {
+          "i": "/api/v1/cn/candles",
+          "x": 0,
+          "y": 2,
+          "w": 40,
+          "h": 20
+        },
+        {
+          "i": "/api/v1/cn/prices",
+          "x": 0,
+          "y": 23,
+          "w": 40,
+          "h": 14,
+          "state": {
+            "chartView": {
+              "enabled": false,
+              "chartType": "line"
+            },
+            "columnState": {
+              "default": {
+                "columnPinning": {
+                  "leftColIds": [
+                    "time"
+                  ],
+                  "rightColIds": []
+                },
+                "columnOrder": {
+                  "orderedColIds": [
+                    "open",
+                    "close",
+                    "high",
+                    "low",
+                    "volume",
+                    "time"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "name": "Group 1",
+      "type": "endpointParam",
+      "paramName": "ticker",
+      "defaultValue": "600325",
+      "widgetIds": [
+        "cn/key_metrics",
+        "cn/news",
+        "cn/prices",
+        "cn/balance",
+        "cn/cash_flow",
+        "cn/income",
+        "cn/financial_data",
+        "cn/candles",
+        "cn/quote"
+      ]
+    },
+    {
+      "name": "Group 2",
+      "type": "param",
+      "paramName": "period",
+      "defaultValue": "annual",
+      "widgetIds": [
+        "cn/balance",
+        "cn/cash_flow",
+        "cn/income",
+        "cn/financial_data"
+      ]
+    }
+  ]
+}

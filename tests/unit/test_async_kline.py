@@ -5,8 +5,8 @@ from datetime import datetime, date
 from unittest.mock import MagicMock, AsyncMock, patch
 import pandas as pd
 
-from galaxy_db_sync.database.services.kline import KlineService
-from galaxy_db_sync.database.core.async_connection import AsyncDatabaseManager
+from galaxy_core.database.services.kline import KlineService
+from galaxy_core.database.core.async_connection import AsyncDatabaseManager
 
 
 class TestKlineServiceInit:
@@ -20,7 +20,7 @@ class TestKlineServiceInit:
 
     def test_interval_model_map_initialized(self, async_db_manager_mock):
         """Test that interval_model_map is initialized from INTERVAL_MODEL_MAP."""
-        from galaxy_db_sync.database.models.kline import INTERVAL_MODEL_MAP
+        from galaxy_core.database.models.kline import INTERVAL_MODEL_MAP
 
         service = KlineService(db_manager=async_db_manager_mock)
 
@@ -216,15 +216,15 @@ class TestKlineServiceSave:
 
 
 class TestGlobalSingleton:
-    """Tests verifying global singleton exists."""
+    """Tests verifying DI constructor injection pattern."""
 
-    def test_global_kline_service_exists(self):
-        """Test that kline_service singleton exists."""
-        from galaxy_db_sync.database.services import kline_service
+    def test_no_global_kline_service_singleton(self):
+        """Test that kline_service singleton was removed (DI refactor)."""
+        import galaxy_core.database.services.kline as module
 
-        # Should have a global instance
-        assert kline_service is not None
-        assert isinstance(kline_service, KlineService)
+        assert not hasattr(module, "kline_service"), (
+            "kline.py 不应有 kline_service 模块级实例"
+        )
 
     def test_service_must_be_instantiated_with_db_manager(self):
         """Test that service cannot be instantiated without db_manager."""

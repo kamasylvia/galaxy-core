@@ -5,11 +5,11 @@ from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 import pandas as pd
 
-from galaxy_db_sync.database.services.kline import (
+from galaxy_core.database.services.kline import (
     batch_save_kline_to_db,
     save_kline_to_db,
 )
-from galaxy_db_sync.database.models.kline import INTERVAL_MODEL_MAP, KlineDay
+from galaxy_core.database.models.kline import INTERVAL_MODEL_MAP, KlineDay
 
 
 @pytest.mark.asyncio

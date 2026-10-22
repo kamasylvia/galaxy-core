@@ -5,35 +5,81 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from galaxy_db_sync.database.core.async_connection import (
-    AsyncDatabaseManager,
-    async_db_manager,
-    init_async_database,
-)
+from galaxy_core.database.core.async_connection import AsyncDatabaseManager
 
 
 class TestAsyncDatabaseManager:
     """Unit tests for AsyncDatabaseManager class."""
 
-    def test_singleton_pattern(self):
-        """Test that AsyncDatabaseManager uses singleton pattern."""
+    def test_initialize_creates_separate_instances(self):
+        """Test that AsyncDatabaseManager creates separate instances."""
         manager1 = AsyncDatabaseManager()
         manager2 = AsyncDatabaseManager()
-        assert manager1 is manager2
-        assert manager1 is async_db_manager
+        # Without __new__ singleton, each call creates a new instance
+        assert manager1 is not manager2
 
-    def test_initialize_creates_asyncpg_url(self):
-        """Test that initialize() creates URL with asyncpg driver."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._engine = None
-        manager._session_maker = None
+    def test_initialize_reads_db_creds_via_get_env(self):
+        """不传参时,DB_* 凭证走 get_env(优先 Infisical,其次 os.environ).
+
+        回归 2026-07-06 改动:async_connection.initialize() 的 5 处 os.getenv
+        改成 get_env。验证 get_env 被调用 + URL 含其返回值。
+        """
+        manager = AsyncDatabaseManager()
+
+        def fake_get_env(key, default=None, environment="dev"):
+            return {
+                "DB_HOST": "db.from-infisical",
+                "DB_PORT": "5433",
+                "DB_NAME": "galaxy",
+                "DB_USER": "postgres",
+                "DB_PASSWORD": "secret-from-infisical",
+            }.get(key, default)
 
         with (
             patch(
-                "galaxy_db_sync.database.core.async_connection.create_async_engine"
+                "galaxy_core.database.core.async_connection.create_async_engine"
             ) as mock_create_engine,
             patch(
-                "galaxy_db_sync.database.core.async_connection.async_sessionmaker"
+                "galaxy_core.database.core.async_connection.async_sessionmaker"
+            ) as mock_sessionmaker,
+            patch(
+                "galaxy_core.database.core.async_connection.get_env",
+                side_effect=fake_get_env,
+            ) as mock_get_env,
+        ):
+            mock_create_engine.return_value = MagicMock()
+            mock_sessionmaker.return_value = MagicMock()
+
+            manager.initialize()
+
+            # get_env 被调用了 5 次(对应 5 个 DB_* 凭证)
+            assert mock_get_env.call_count == 5
+            called_keys = [call.args[0] for call in mock_get_env.call_args_list]
+            assert called_keys == [
+                "DB_HOST",
+                "DB_PORT",
+                "DB_NAME",
+                "DB_USER",
+                "DB_PASSWORD",
+            ]
+
+            # URL 含 get_env 返回值,不是 os.getenv 默认值
+            url = mock_create_engine.call_args[0][0]
+            assert "db.from-infisical" in url
+            assert "5433" in url
+            assert "postgres:secret-from-infisical" in url
+            assert "/galaxy" in url
+
+    def test_initialize_creates_asyncpg_url(self):
+        """Test that initialize() creates URL with asyncpg driver."""
+        manager = AsyncDatabaseManager()
+
+        with (
+            patch(
+                "galaxy_core.database.core.async_connection.create_async_engine"
+            ) as mock_create_engine,
+            patch(
+                "galaxy_core.database.core.async_connection.async_sessionmaker"
             ) as mock_sessionmaker,
         ):
             mock_engine = MagicMock()
@@ -56,16 +102,14 @@ class TestAsyncDatabaseManager:
 
     def test_initialize_sets_expire_on_commit_false(self):
         """Test that expire_on_commit=False is set on async_sessionmaker."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._engine = None
-        manager._session_maker = None
+        manager = AsyncDatabaseManager()
 
         with (
             patch(
-                "galaxy_db_sync.database.core.async_connection.create_async_engine"
+                "galaxy_core.database.core.async_connection.create_async_engine"
             ) as mock_create_engine,
             patch(
-                "galaxy_db_sync.database.core.async_connection.async_sessionmaker"
+                "galaxy_core.database.core.async_connection.async_sessionmaker"
             ) as mock_sessionmaker,
         ):
             mock_create_engine.return_value = MagicMock()
@@ -79,16 +123,14 @@ class TestAsyncDatabaseManager:
 
     def test_initialize_pool_configuration(self):
         """Test that pool configuration is passed correctly."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._engine = None
-        manager._session_maker = None
+        manager = AsyncDatabaseManager()
 
         with (
             patch(
-                "galaxy_db_sync.database.core.async_connection.create_async_engine"
+                "galaxy_core.database.core.async_connection.create_async_engine"
             ) as mock_create_engine,
             patch(
-                "galaxy_db_sync.database.core.async_connection.async_sessionmaker"
+                "galaxy_core.database.core.async_connection.async_sessionmaker"
             ) as mock_sessionmaker,
         ):
             mock_create_engine.return_value = MagicMock()
@@ -150,21 +192,13 @@ class TestAsyncDatabaseManager:
 
     def test_session_raises_if_not_initialized(self):
         """Test that session() raises RuntimeError if not initialized."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._session_maker = None
-
-        # Attempt to use session should raise
-        with pytest.raises(RuntimeError, match="Database not initialized"):
-            # Can't use asynccontextmanager directly in sync test
-            # Just check that accessing session would fail
-            if manager._session_maker is None:
-                raise RuntimeError("Database not initialized. Call initialize() first.")
+        manager = AsyncDatabaseManager()
+        assert manager._session_maker is None
 
     @pytest.mark.asyncio
     async def test_get_session_raises_if_not_initialized(self):
         """Test that get_session() raises RuntimeError if not initialized."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._session_maker = None
+        manager = AsyncDatabaseManager()
 
         with pytest.raises(RuntimeError, match="Database not initialized"):
             await manager.get_session()
@@ -172,8 +206,7 @@ class TestAsyncDatabaseManager:
     @pytest.mark.asyncio
     async def test_create_tables_raises_if_not_initialized(self):
         """Test that create_tables() raises RuntimeError if not initialized."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
-        manager._engine = None
+        manager = AsyncDatabaseManager()
 
         with pytest.raises(RuntimeError, match="Database not initialized"):
             await manager.create_tables()
@@ -181,7 +214,7 @@ class TestAsyncDatabaseManager:
     @pytest.mark.asyncio
     async def test_create_tables_calls_run_sync(self):
         """Test that create_tables() uses run_sync for metadata creation."""
-        manager = AsyncDatabaseManager.__new__(AsyncDatabaseManager)
+        manager = AsyncDatabaseManager()
 
         # Mock engine with begin() returning async context manager
         mock_engine = MagicMock()
@@ -195,65 +228,7 @@ class TestAsyncDatabaseManager:
         manager._engine = mock_engine
         manager._session_maker = MagicMock()
 
-        with patch.object(manager, "_create_hypertables_async", new_callable=AsyncMock):
-            await manager.create_tables()
+        await manager.create_tables()
 
-            # Verify run_sync was called
-            mock_conn.run_sync.assert_awaited_once()
-
-
-class TestInitAsyncDatabase:
-    """Tests for init_async_database factory function."""
-
-    @pytest.mark.asyncio
-    async def test_init_async_database_initializes_manager(self):
-        """Test that init_async_database initializes the manager."""
-        with (
-            patch.object(async_db_manager, "initialize") as mock_init,
-            patch.object(
-                async_db_manager, "create_tables", new_callable=AsyncMock
-            ) as mock_create_tables,
-        ):
-            mock_init.return_value = None
-            mock_create_tables.return_value = None
-
-            result = await init_async_database(
-                host="localhost",
-                database="test_db",
-                create_tables=True,
-            )
-
-            assert result is async_db_manager
-            mock_init.assert_called_once()
-            mock_create_tables.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_init_async_database_skip_tables(self):
-        """Test that init_async_database can skip table creation."""
-        with (
-            patch.object(async_db_manager, "initialize") as mock_init,
-            patch.object(
-                async_db_manager, "create_tables", new_callable=AsyncMock
-            ) as mock_create_tables,
-        ):
-            mock_init.return_value = None
-
-            result = await init_async_database(create_tables=False)
-
-            assert result is async_db_manager
-            mock_init.assert_called_once()
-            mock_create_tables.assert_not_awaited()
-
-
-class TestGlobalAsyncDbManager:
-    """Tests for global async_db_manager singleton."""
-
-    def test_global_singleton_is_async_database_manager(self):
-        """Test that async_db_manager is an AsyncDatabaseManager instance."""
-        assert isinstance(async_db_manager, AsyncDatabaseManager)
-
-    def test_global_singleton_identity(self):
-        """Test that async_db_manager is the same instance across imports."""
-        from galaxy_db_sync.database.core.async_connection import async_db_manager as imported
-
-        assert async_db_manager is imported
+        # Verify run_sync was called
+        mock_conn.run_sync.assert_awaited_once()

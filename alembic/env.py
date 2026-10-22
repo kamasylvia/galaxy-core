@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath("."))
 load_dotenv()
 
 # 导入我们的模型
-from galaxy_db_sync.database.models import Base
+from galaxy_core.database.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

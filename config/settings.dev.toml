@@ -1,137 +1,82 @@
-# Galaxy DB Bridge 开发环境配置文件
-# 注意：敏感信息（密码、密钥等）应通过环境变量传入
-#
-# 使用方式：GALAXY_CONFIG_ENV=dev python -m galaxy_db_sync.scheduler
+# Galaxy DB Bridge 开发环境配置
+# 使用方式：GALAXY_CONFIG_ENV=dev uv run galaxy-core scheduler
 
 [amazing_data]
-# AmazingData API 配置（非敏感）
-# username, password, host, port 通过环境变量 GALAXY_USERNAME, GALAXY_PASSWORD, GALAXY_HOST, GALAXY_PORT 传入
 local_path = "./data/local_cache/"
+api_timeout_seconds = 600
 
-# 连接和超时设置（非敏感）
-timeout = 30
+# 数据库连接信息通过环境变量传入：DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
-[database]
-# TimescaleDB 连接配置（非敏感）
-# host, port, database, user, password 通过环境变量 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 传入
+[kline]
+default_start_date = "20130101"
 
-# 连接池设置（非敏感）
-pool_size = 10
-max_overflow = 20
-pool_timeout = 30
-
-[sync]
-# 数据同步配置
-default_start_year = 2013
-batch_size = 1000
-adjust_for_split = true
+[sync.batch]
+db_upsert = 100
+# API 分批内存预算(每批最大行数,窗口自适应 chunk_size,详见 settings.toml)
+api_batch_rows = 1580000
+# 成分股二维展开类(industry_weight)独立基准(详见 settings.toml)
+weight_chunk_size = 20
+# 日度行情类(industry_daily)的 codes 数硬上限(详见 settings.toml)
+daily_code_cap = 100
+# K 线 codes 上限(详见 settings.toml)
+kline_code_cap = 500
 
 [logging]
 level = "INFO"
 file_path = "./logs/"
 max_size = "50MB"
 backup_count = 5
-# 新增配置：按日期时间分目录存储日志
 enable_separate_log_files = true
 log_file_pattern = "./logs/{date}/{time}.log"
 
 [scheduler]
-# 开发环境：每 2 分钟自动同步（便于快速测试）
-auto_sync_interval_minutes = 2
+# 周期性同步：启动后 2 分钟首次同步，之后每 30 分钟一次
+auto_sync_interval_minutes = 30
+auto_sync_first_delay_minutes = 2
 
-# K-line sync trigger time (hour, minute) - 开发环境使用 auto_sync_interval 替代
-kline_trigger_hour = 23
+kline_trigger_hour = 12
 kline_trigger_minute = 0
 
-# Calendar sync dates - sync next year calendar on December 20
-calendar_sync_month = 12
+# K线补同步(catch-up):2026-08-25 改 16:10,详见 settings.toml 同名注释
+kline_catchup_hour = 16
+kline_catchup_minute = 10
+
 calendar_sync_day = 20
-calendar_check_window_start = 20  # Check from Dec 20
-calendar_check_window_end = 31    # Check until Dec 31
+calendar_check_window_start = 20
+calendar_check_window_end = 31
+# 当前年日历完整性校验（2026-07-14）：非 12 月每天 00:00 校验当前年日历，
+# 已有交易日数低于 (month-1)×此值 则补全年。A 股月均 ~20 交易日，18 留容差。
+calendar_min_trading_days_per_month = 18
 
-# Retry policy per SCHED-03
 max_retries = 3
-retry_delays_minutes = [5, 15, 30]  # 5min, 15min, 30min exponential backoff
+retry_delay_minutes = 30
 
-# Sync scope - which intervals to auto-sync
 enabled_intervals = ["day", "week"]
+security_types = ["EXTRA_ETF", "EXTRA_STOCK_A", "EXTRA_INDEX_A"]
 
-# Security type for auto-sync (SH_A for Shanghai A-shares, SZ_A for Shenzhen A-shares)
-security_type = "EXTRA_ETF"
-
-# Completeness check per D-19, D-20
-# Intervals to check for completeness
-check_intervals = ["day", "week"]
-
-# Daily routine check trigger time (17:00 per D-19)
-check_trigger_hour = 17
-check_trigger_minute = 0
-
-# Monthly full check - runs on first non-trading day of each month at midnight
-# Full check: from AmazingData data start (2013)
 monthly_full_check_hour = 0
 monthly_full_check_minute = 0
-
-# Check mode configuration
-# routine_lookback_periods: number of periods to look back for routine checks
-# Full check: from AmazingData data start (2013)
-# Routine check: last N periods (default 10)
 routine_lookback_periods = 10
 
-# Logging level for scheduler
-log_level = "INFO"
+# 数据起始年份（AmazingData 统一为 2013）
+data_start_year = 2013
 
-# Per-security-type check ranges (based on AmazingData data availability)
-# Data source: docs/AmazingData/Markdown/AmazingData开发手册/2. 功能介绍/2.2 数据详情.md
-# 行情数据起点: 2013年至今 (股票、指数、债券、场内基金)
+# 自动清理保留天数（sync_state 表 + 文件日志目录）
+cleanup_retention_days = 7
 
-[scheduler.check_ranges.SH_A]
-start_year = 2013  # 上交所A股 - AmazingData 数据起点
+# kline 独立重试(2026-08-11):凌晨 AM 时段性返空,需跨重试窗口。
+# 开发环境 retry_delay=30min,max_retries=6 → 7 次尝试跨 3h。
+[scheduler.kline]
+max_retries = 3
 
-[scheduler.check_ranges.SZ_A]
-start_year = 2013  # 深交所A股 - AmazingData 数据起点
+[index]
+# get_index_weight SDK 硬限制：仅支持 5 个指数
+index_weight_codes = ["000016.SH", "000300.SH", "000905.SH", "000906.SH", "000852.SH"]
+index_security_type = "EXTRA_INDEX_A"
+# 开发环境不禁用 index_weight，便于 SDK 修复后先在此验证（生产 settings.toml 为 true）
+disable_index_weight = false
 
-[scheduler.check_ranges.EXTRA_STOCK_A]
-start_year = 2013  # 上交所、深交所、北交所A股 - AmazingData 数据起点
-
-[scheduler.check_ranges.EXTRA_STOCK_A_SH_SZ]
-start_year = 2013  # 上交所、深交所A股 - AmazingData 数据起点
-
-[scheduler.check_ranges.BJ_A]
-start_year = 2013  # 北交所A股 - AmazingData 数据起点（注：北交所2021年成立，但数据覆盖2013年起）
-
-[scheduler.check_ranges.SH_INDEX]
-start_year = 2013  # 上交所指数 - AmazingData 数据起点
-
-[scheduler.check_ranges.SZ_INDEX]
-start_year = 2013  # 深交所指数 - AmazingData 数据起点
-
-[scheduler.check_ranges.BJ_INDEX]
-start_year = 2013  # 北交所指数 - AmazingData 数据起点
-
-[scheduler.check_ranges.EXTRA_INDEX_A]
-start_year = 2013  # 上交所、深交所、北交所指数 - AmazingData 数据起点
-
-[scheduler.check_ranges.EXTRA_INDEX_A_SH_SZ]
-start_year = 2013  # 上交所、深交所指数 - AmazingData 数据起点
-
-[scheduler.check_ranges.EXTRA_ETF]
-start_year = 2013  # 上交所、深交所ETF - AmazingData 数据起点（场内基金）
-
-[scheduler.check_ranges.SH_ETF]
-start_year = 2013  # 上交所ETF - AmazingData 数据起点
-
-[scheduler.check_ranges.SZ_ETF]
-start_year = 2013  # 深交所ETF - AmazingData 数据起点
-
-[scheduler.check_ranges.EXTRA_KZZ]
-start_year = 2013  # 上交所、深交所可转债 - AmazingData 数据起点（债券类）
-
-[scheduler.check_ranges.SH_KZZ]
-start_year = 2013  # 上交所可转债 - AmazingData 数据起点
-
-[scheduler.check_ranges.SZ_KZZ]
-start_year = 2013  # 深交所可转债 - AmazingData 数据起点
-
-[scheduler.check_ranges.default]
-start_year = 2013  # 默认起始年份 - AmazingData 股票/指数/债券/场内基金统一数据起点
+[fundflow]
+# per-symbol 资金流向表(long_hu_bang/block_trading/margin_detail)的证券范围
+# EXTRA_STOCK_A_SH_SZ = 上交所A股和深交所A股(AmazingData 文档 3.5.2.1)
+security_type = "EXTRA_STOCK_A_SH_SZ"
