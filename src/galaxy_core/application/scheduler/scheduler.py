@@ -285,11 +285,11 @@ class AutoSyncScheduler:
                     f"活跃task={len(self._tasks)} _running={self._running}"
                 )
 
-            # 轮询触发条件
+            # 轮询触发条件(2026-10-22 起白天无 SDK 调用:16:10/19:50 已删,
+            # 全量改走 0:10;12:00 主链只做 cleanup;realtime 由本进程 spawn/kill)
             await self._check_kline_trigger(today, current_time)
-            await self._check_kline_catchup_trigger(today, current_time)
-            await self._check_margin_catchup_trigger(today, current_time)
             await self._check_minute_cover_trigger(today, current_time)
+            await self._check_realtime_sub_window(today, current_time)
             await self._check_calendar_trigger(today, current_time)
 
             # 检查周期性同步（测试模式）
@@ -415,54 +415,8 @@ class AutoSyncScheduler:
     async def _check_kline_catchup_trigger(
         self, today: date, current_time: time
     ) -> None:
-        """日间补同步(catch-up,16:10):0:10 K 线全量链未闭环时补跑非 K 线部分。
-
-        2026-10-22 起 K 线(day/week/month/season/year/min)全部改走 0:10
-        独立 job,白天 TGW 留给 realtime_sub。本触发只补非 K 线
-        (fundflow/financial/refdata/industry):门控仍查 kline_day
-        success(0:10 已闭环则跳过,幂等)。
-        """
-        trigger_hour = self._config.get("kline_catchup_hour", 7)
-        trigger_minute = self._config.get("kline_catchup_minute", 10)
-
-        if current_time.hour == trigger_hour and current_time.minute == trigger_minute:
-            yesterday = today - timedelta(days=1)
-            trading_days = await self._calendar_store.get_trading_days(
-                yesterday, yesterday
-            )
-            if not trading_days:
-                logger.info(f"跳过K线补同步: {yesterday} 不是交易日，无新数据")
-                return
-
-            # 防并发:00:10 同步链仍在运行(如 kline 重试中)则不再起链
-            active = [
-                t
-                for t in self._tasks
-                if not t.done()
-                and t.get_name() in (f"kline_sync_{today}", f"kline_catchup_{today}")
-            ]
-            if active:
-                logger.info(
-                    f"跳过K线补同步: 同步链仍在运行 "
-                    f"({[t.get_name() for t in active]})"
-                )
-                return
-
-            period_id = yesterday.strftime("%Y%m%d")
-            if await self._state_manager.is_synced("kline_day", period_id):
-                logger.info(f"跳过K线补同步: kline_day {period_id} 已同步")
-                return
-
-            logger.info(
-                f"触发K线补同步(catch-up): {current_time} (同步日期 {yesterday})"
-            )
-
-            task = asyncio.create_task(
-                self._run_kline_sync_with_cleanup(today),
-                name=f"kline_catchup_{today}"
-            )
-            self._tasks.add(task)
-            task.add_done_callback(self._on_task_done)
+        """已废除(2026-10-22):16:10 并入 0:10 全量 job。保留空壳防旧测试 import 报错。"""
+        return
     async def _check_minute_cover_trigger(
         self, today: date, current_time: time
     ) -> None:
@@ -508,57 +462,83 @@ class AutoSyncScheduler:
             self._tasks.add(task)
             task.add_done_callback(self._on_task_done)
 
+    async def _check_realtime_sub_window(
+        self, today: date, current_time: time
+    ) -> None:
+        """realtime_sub 窗口管理(2026-10-22 引入):scheduler 主进程 spawn/kill。
+
+        时间全读 config [scheduler] realtime_sub_start/end(北京时间 HH:MM),
+        不用 systemd timer。start 到点且当日交易日 → subprocess 起脚本;
+        end 到点 → terminate。子进程自带到点自停,此处 kill 是兜底。
+        非交易日不拉起。
+        """
+        import subprocess as _sp
+
+        start_str = str(self._config.get("realtime_sub_start", "09:00"))
+        end_str = str(self._config.get("realtime_sub_end", "15:30"))
+        sh, sm = (int(x) for x in start_str.split(":"))
+        eh, em = (int(x) for x in end_str.split(":"))
+        cur = (current_time.hour, current_time.minute)
+        in_window = (sh, sm) <= cur < (eh, em)
+
+        proc = getattr(self, "_realtime_proc", None)
+        alive = proc is not None and proc.poll() is None
+        if alive and proc.returncode not in (None, 0):
+            logger.warning(f"realtime_sub 异常退出(rc={proc.returncode}),等待下轮窗口重拉")
+            alive = False
+
+        if in_window and not alive:
+            days = await self._calendar_store.get_trading_days(today, today)
+            if not days:
+                return
+            log_path = f"logs/realtime_sub_{today.strftime('%Y%m%d')}.log"
+            log.info(f"拉起 realtime_sub ({start_str}-{end_str})")
+            with open(log_path, "ab") as lf:
+                self._realtime_proc = _sp.Popen(
+                    ["uv", "run", "scripts/realtime_sub.py"],
+                    stdout=lf, stderr=_sp.STDOUT, start_new_session=True,
+                )
+        elif not in_window and alive:
+            logger.info(f"窗口结束({end_str}),停止 realtime_sub")
+            proc.terminate()
+
     async def _check_margin_catchup_trigger(
         self, today: date, current_time: time
     ) -> None:
-        """晚间补同步触发(2026-09-09 引入,2026-09-11 扩展为 margin+industry)。
-
-        T+1 数据 AM 端发布时刻不稳(实证:margin_detail 15:27 仍空、
-        industry_daily 跨小时涓流),12:00 链重试(5min×3,~16:00 结束)
-        仍不足时,默认 19:50(北京)最后补拉一次。两个目标串行(API 不支持
-        并发),各自 is_synced 门控:已成功跳过、失败/未达覆盖率则重跑。
-        防并发:当日同步链任务仍在运行则跳过。
-        """
-        trigger_hour = self._config.get("margin_catchup_hour", 19)
-        trigger_minute = self._config.get("margin_catchup_minute", 50)
-
-        if current_time.hour == trigger_hour and current_time.minute == trigger_minute:
-            yesterday = today - timedelta(days=1)
-            trading_days = await self._calendar_store.get_trading_days(
-                yesterday, yesterday
-            )
-            if not trading_days:
-                logger.info(
-                    f"跳过晚间补同步: {yesterday} 不是交易日,无新数据"
-                )
-                return
-
-            active = [t for t in self._tasks if not t.done()]
-            if active:
-                logger.info(
-                    f"跳过晚间补同步: 同步链仍在运行 "
-                    f"({[t.get_name() for t in active]})"
-                )
-                return
-
-            logger.info(f"触发晚间补同步: {current_time}")
-
-            task = asyncio.create_task(
-                self._run_evening_catchup(today),
-                name=f"margin_catchup_{today}",
-            )
-            self._tasks.add(task)
-            task.add_done_callback(self._on_task_done)
+        """已废除(2026-10-22):19:50 并入 0:10 全量 job。保留空壳防旧测试 import 报错。"""
+        return
 
     async def _run_minute_cover_with_cleanup(self, today: date) -> None:
-        """0:10 K 线全量 job:日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
+        """0:10 全量 job:非 K 线 → 日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
 
-        白天 TGW 独占给 realtime_sub(9:00-15:30),K 线全量改走凌晨串行。
-        1) run_day/week/month/season/year 拉昨日(各自由 is_synced 门控);
-        2) run_minute 同窗覆盖 realtime_sub 的 is_final=false → true;
-        3) 残留追扫往回 8 天(T+2 才发布场景);
-        4) retention policy 滚动删超期 chunk。
+        白天 TGW 独占给 realtime_sub(9:00-15:30),全量改走凌晨串行。
+        1) industry/fundflow/financial/refdata(非 K 线,各自由 is_synced 门控);
+        2) run_day/week/month/season/year 拉昨日;
+        3) run_minute 同窗覆盖 realtime_sub 的 is_final=false → true;
+        4) 残留追扫往回 8 天(T+2 才发布场景);
+        5) retention policy 滚动删超期 chunk。
         """
+        logger.info("运行 0:10 全量同步:非 K 线")
+        for name, fn in (
+            ("行业指数日度", self._industry_index_job.run_daily),
+            ("交易所指数日度", self._exchange_index_job.run_daily),
+            ("资金流向", self._fundflow_job.run_daily),
+            ("财务数据", self._financial_job.run),
+            ("refdata stock_basic", self._refdata_job.run_stock_basic),
+            ("refdata backward_factor", self._refdata_job.run_backward_factor),
+        ):
+            try:
+                await fn(today)
+            except Exception as e:
+                logger.error(f"{name}同步失败: {e}", exc_info=True)
+        try:
+            await self._exchange_index_job.run_dimensions(today)
+        except Exception as e:
+            logger.error(f"交易所指数维度同步失败: {e}", exc_info=True)
+        try:
+            await self._industry_index_job.run_dimensions(today)
+        except Exception as e:
+            logger.error(f"行业指数维度同步失败: {e}", exc_info=True)
         logger.info("运行 0:10 K 线全量同步")
         for name, fn in (
             ("日线", self._kline_job.run_day),
@@ -586,17 +566,18 @@ class AutoSyncScheduler:
             logger.error(f"分钟线 retention 应用失败: {e}", exc_info=True)
 
     async def _rescan_unfinalized(self, today: date) -> None:
-        """残留追扫:往回 8 天查 is_final=false,有残留即重跑该日覆盖。"""
+        """残留追扫:往回 N 天查 is_final=false,有残留即重跑该日覆盖(N 读 config)。"""
         from datetime import timedelta
 
         minute_tables = (
             "kline_min1", "kline_min3", "kline_min5", "kline_min10",
             "kline_min15", "kline_min30", "kline_min60", "kline_min120",
         )
+        rescan_days = int(self._config.get("minute_rescan_days", 8))
         async with self._db_manager.session() as session:
             from sqlalchemy import text as _text
 
-            for back in range(2, 9):
+            for back in range(2, rescan_days + 1):
                 day = today - timedelta(days=back)
                 try:
                     days = await session.execute(
@@ -664,97 +645,14 @@ class AutoSyncScheduler:
                 if ok:
                     logger.info(f"retention 已应用: {table} = {days} 天")
 
-    async def _run_evening_catchup(self, today: date) -> None:
-        """晚间补同步执行体:两融(margin)→ 行业指数(daily+weight)串行.
-
-        各自编排层门控已成功的 sync_type 自动跳过;失败/未达覆盖率的
-        (industry_daily 覆盖率熔断、margin_detail 空结果熔断)重跑。
-        单 job 失败仅记日志,不阻断另一个(对齐日度链隔离模式)。
-        """
-        try:
-            await self._fundflow_job.run_daily(today, target="margin")
-        except Exception as e:
-            logger.error(f"晚间补同步 fundflow margin 失败: {e}", exc_info=True)
-        try:
-            await self._industry_index_job.run_daily(today)
-        except Exception as e:
-            logger.error(f"晚间补同步 industry 指数失败: {e}", exc_info=True)
-
     async def _run_kline_sync_with_cleanup(self, today: date) -> None:
-        """K-line 周期调用链。
+        """12:00 日间链(2026-10-22 起仅 cleanup,不碰 SDK)。
 
-        MIN → DAY → [指数日度行情/权重] → (sleep) → WEEK → MONTH → SEASON → YEAR
-        → refdata → [指数维度数据] → financial → cleanup.
-        按顺序执行，复用已初始化的基础设施（API 登录、DB 连接）。
-        各步独立 try/except 隔离(2026-07-28 Bug 3: 单步 raise 不阻断后续,
-        对齐 fundflow 既有模式)。
-        参考数据同步在所有 K 线之后运行（API 不支持并发）。
-        指数日度数据（industry_daily/index_weight/industry_weight）紧跟 K线 day，
-        维度数据（成分股/基本信息）紧跟 refdata，财务数据同步最后运行。
+        白天 TGW 独占给 realtime_sub(9:00-15:30)。K 线全量 +
+        industry/fundflow/financial/refdata 全改走 0:10 独立 job 串行。
+        本链只做日志清理(无 SDK 调用,可白天跑)。
         """
-        # 1. 分钟线同步已移出主链(2026-10-22)。
-        # 2. 日线/周/月/季/年已移出主链(2026-10-22):白天 TGW 留给 realtime_sub
-        # (9:00-15:30 独占,SDK 单例互踢)。K 线全量(日+长周期+分钟定稿覆盖)
-        # 改走次日 0:10 独立 job(_run_minute_cover_with_cleanup),串行无并发。
-
-        # 2.5 指数日度数据（industry_daily + index_weight + industry_weight）
-        logger.debug("运行指数日度数据同步")
-        try:
-            await self._exchange_index_job.run_daily(today)
-        except Exception as e:
-            logger.error(f"交易所指数日度同步失败: {e}", exc_info=True)
-        try:
-            await self._industry_index_job.run_daily(today)
-        except Exception as e:
-            logger.error(f"行业指数日度同步失败: {e}", exc_info=True)
-
-        # 7. 参考数据 stock_basic 同步(P0: 每周,快)
-        # 2026-08-04 拆分:原 refdata_job.run(today) 含 stock_basic + backward_factor,
-        # backward_factor 月度全量(9000万条,2h+)阻塞后续 fundflow → long_hu_bang
-        # 拖到凌晨 SDK 不稳定时段全失败。拆出 stock_basic(快)先跑,
-        # backward_factor 移到 chain 末尾(第 8.8 步)不阻塞 fundflow。
-        logger.debug("运行参考数据 stock_basic 同步")
-        try:
-            await self._refdata_job.run_stock_basic(today)
-        except Exception as e:
-            logger.error(f"参考数据 stock_basic 同步失败: {e}", exc_info=True)
-
-        # 7.5 指数维度数据（成分股/基本信息，周度/月度）
-        logger.debug("运行指数维度数据同步")
-        try:
-            await self._exchange_index_job.run_dimensions(today)
-        except Exception as e:
-            logger.error(f"交易所指数维度同步失败: {e}", exc_info=True)
-        try:
-            await self._industry_index_job.run_dimensions(today)
-        except Exception as e:
-            logger.error(f"行业指数维度同步失败: {e}", exc_info=True)
-
-        # 8. 财务数据月度同步（内部按 period_id=YYYY-MM 去重）
-        try:
-            await self._financial_job.run(today)
-        except Exception as e:
-            logger.error(f"财务数据同步失败: {e}", exc_info=True)
-
-        # 8.5 资金流向同步 (akshare 1 + amazingdata 4 = 5 表) — Phase 02
-        # 非阻断:单 job 失败仅记日志,不影响后续 cleanup
-        logger.debug("运行资金流向同步")
-        try:
-            await self._fundflow_job.run_daily(today)
-        except Exception as e:
-            logger.error(f"资金流向同步失败: {e}", exc_info=True)
-
-        # 8.8 参考数据 backward_factor 同步(月度,慢,全量 ~2h+)
-        # 2026-08-04 移到 chain 末尾(fundflow 之后):月度全量耗时长,放末尾不阻塞
-        # 已完成的 fundflow。backward_factor 月度门控(is_synced month_id),非月度
-        # 日秒过;月初触发全量时即使 2h+ 也只影响 cleanup(非关键)。
-        logger.debug("运行参考数据 backward_factor 同步")
-        try:
-            await self._refdata_job.run_backward_factor(today)
-        except Exception as e:
-            logger.error(f"参考数据 backward_factor 同步失败: {e}", exc_info=True)
-
-        # 9. 日志清理（复用基础设施）
+        # 日志清理（复用基础设施）
         logger.debug("运行日志清理")
         try:
             await self._cleanup_job.run()

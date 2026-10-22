@@ -50,26 +50,10 @@ enable_separate_log_files = true
 log_file_pattern = "./logs/{date}/{time}.log"
 
 [scheduler]
-# K-line 自动同步触发时间（每日,2026-08-25 由 00:10 改 12:00）:
-# AM 服务端 T-1 K线数据发布时刻不稳定(实测 T+1 早 ~50% 未发布,部分 T+2),
-# 凌晨同步大量空跑;改次日午间 12:00,发布概率高,失败后每小时重试 3 次
-# (见 [scheduler.kline]),覆盖到 15:00。
+# 12:00 日间链(2026-10-22 起仅 cleanup,不碰 SDK;白天 TGW 独占给 realtime_sub)。
+# 全量改走 0:10 独立 job(minute_cover_*),残留追扫往回 minute_rescan_days 天。
 kline_trigger_hour = 12
 kline_trigger_minute = 0
-
-# K线补同步(catch-up,2026-08-20 引入,2026-08-25 由 07:10 改 16:10):
-# 主同步改 12:00 后,07:10 会因「昨日未同步」天天触发(变相回到早上),
-# 故后移至 16:10 —— 12:00 + 3 次重试(15:00 结束)之后的当日最后兜底。
-# 幂等:已同步则跳过。详见 AGENTS.md 2026-08-20/25 审计。
-kline_catchup_hour = 16
-kline_catchup_minute = 10
-
-# 晚间补同步(2026-09-09 引入,2026-09-11 扩展 margin+industry):T+1 数据
-# AM 端发布时刻不稳(margin_detail 15:27 仍空、industry_daily 跨小时涓流)。
-# 空结果/覆盖率熔断后 12:00 链重试(~16:00 结束)仍不足时,19:50 最后补拉:
-# fundflow margin + 行业指数串行,各自 is_synced 门控,已成功自动跳过。
-margin_catchup_hour = 19
-margin_catchup_minute = 50
 
 # 交易日历同步：每年 12 月 20 日 ~ 31 日检查并同步下一年日历
 calendar_sync_day = 20
@@ -95,10 +79,15 @@ minute_cover_minute = 10
 # 按 8 周期全量约 1GB/天:22 天 ≈ 22GB(一个月交易日,技术指标刚好够算)。
 minute_retention_days = 22
 
-# 实时订阅窗口(2026-10-22 引入):AM 限并发,订阅只在交易时段跑,9:00 前 TRUNCATE 当日表。
-# systemd timer 拉起 realtime_sub,到点即退出(不 24h 常驻)。
+# 实时订阅(2026-10-22 引入):AM 限并发,订阅只在交易时段跑。
+# scheduler 主进程按 start/end spawn/kill 子进程,不用 systemd timer。
+# 时间语义:北京时间 HH:MM(与 scheduler 其他触发器一致,经 _now_cst 解释)。
 realtime_sub_start = "09:00"
 realtime_sub_end = "15:30"
+# 攒批落库间隔(秒):OnKline 回调攒 N 秒批量 upsert,防 PG 被打爆。
+realtime_sub_flush_seconds = 10
+# 残留追扫往回天数(T+2 才发布场景):追扫 is_final=false,有残留即重跑覆盖。
+minute_rescan_days = 8
 
 # 完整性检查配置
 check_intervals = ["day", "week", "month", "season", "year"]

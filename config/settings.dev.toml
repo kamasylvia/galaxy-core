@@ -37,10 +37,6 @@ auto_sync_first_delay_minutes = 2
 kline_trigger_hour = 12
 kline_trigger_minute = 0
 
-# K线补同步(catch-up):2026-08-25 改 16:10,详见 settings.toml 同名注释
-kline_catchup_hour = 16
-kline_catchup_minute = 10
-
 calendar_sync_day = 20
 calendar_check_window_start = 20
 calendar_check_window_end = 31

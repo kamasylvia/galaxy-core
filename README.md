@@ -205,8 +205,8 @@ galaxy-core calendar --year 2024
 ### 6. 启动自动同步调度器
 
 ```bash
-# 生产环境（12:00 主链:指数/fundflow/financial/refdata;
-# 0:10 K 线全量:日线+长周期+分钟定稿覆盖;9:00-15:30 实时订阅独占 TGW）
+# 生产环境（12:00 日间链仅 cleanup;0:10 全量:非K线+日线长周期+分钟定稿覆盖;
+# 9:00-15:30 实时订阅独占 TGW,时间全读 config/settings.toml [scheduler]）
 galaxy-core scheduler
 
 # 开发环境（30 分钟周期性同步）

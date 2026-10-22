@@ -10,8 +10,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("realtime_sub")
 
 PERIODS = ["min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120"]
-FLUSH_SECONDS = 10
-_running = True
+
+def _cfg(key: str, default):
+    """读 config/settings.toml [scheduler] 节(唯一时间来源)。"""
+    from galaxy_core.shared_kernel.utils.config_loader import get_config
+
+    return get_config("scheduler", key, default)
 
 
 def _handle_signal(signum, frame):
@@ -137,9 +141,10 @@ async def _upsert_batch(period: str, bars: list) -> int:
 
 
 def _flusher(buf: BarBuffer, stop_event: threading.Event):
-    """后台线程:每 FLUSH_SECONDS drain 全 period upsert。"""
+    """后台线程:按 flush 间隔 drain 全 period upsert。"""
+    flush_seconds = int(_cfg("realtime_sub_flush_seconds", 10))
     while not stop_event.is_set():
-        stop_event.wait(FLUSH_SECONDS)
+        stop_event.wait(flush_seconds)
         batches = buf.drain()
         total = sum(len(v) for v in batches.values())
         if not total:
@@ -172,6 +177,24 @@ def main() -> int:
     flusher = threading.Thread(target=_flusher, args=(buf, stop_event), daemon=True)
     flusher.start()
 
+    # 到点自停:end 时间到则退出(时间读 config,不硬编码)
+    end_str = str(_cfg("realtime_sub_end", "15:30"))
+    def _watcher():
+        from datetime import datetime as _dt
+
+        eh, em = (int(x) for x in end_str.split(":"))
+        while not stop_event.is_set():
+            now = _dt.now()
+            if (now.hour, now.minute) >= (eh, em):
+                log.info(f"到收盘窗口 {end_str},退出订阅")
+                stop_event.set()
+                import os as _os
+
+                _os.kill(_os.getpid(), signal.SIGTERM)
+                return
+            stop_event.wait(30)
+
+    threading.Thread(target=_watcher, daemon=True).start()
     if dry_run:
         # mock bar 验证 DB 写入路径
         log.info("dry-run: 写入 1 条 mock bar 验证路径")
@@ -214,7 +237,7 @@ def main() -> int:
         sub_data.register(code_list=universe, period=period_value)(make_handler(period))
         log.info(f"已订阅 {period} ({len(universe)} 只)")
 
-    log.info("订阅启动,9:00–15:30 常驻 (Ctrl-C 或信号退出)")
+    log.info(f"订阅启动,{_cfg('realtime_sub_start', '09:00')}–{end_str} 常驻")
     try:
         sub_data.run()  # 阻塞直到信号/异常
     finally:

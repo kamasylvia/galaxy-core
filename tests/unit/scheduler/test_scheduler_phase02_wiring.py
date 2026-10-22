@@ -100,22 +100,12 @@ class TestInitHoldsPhase02Jobs:
 
 
 class TestChainOrder:
-    """链顺序:financial → fundflow → cleanup(范围修订后, baostock 删)."""
+    """主链隔离:12:00 日间链仅 cleanup,全量改走 0:10 job(2026-10-22)."""
 
     @pytest.mark.asyncio
     async def test_chain_calls_fundflow_run_daily(self):
-        """链应调用 fundflow_job.run_daily(一次)."""
+        """主链不得调 fundflow(已搬 0:10)."""
         scheduler = AutoSyncScheduler()
-        # stub 沿途所有 job 方法
-        scheduler._kline_job.run_minute = AsyncMock()
-        scheduler._kline_job.run_day = AsyncMock()
-        scheduler._kline_job.run_week = AsyncMock()
-        scheduler._kline_job.run_month = AsyncMock()
-        scheduler._kline_job.run_season = AsyncMock()
-        scheduler._kline_job.run_year = AsyncMock()
-        scheduler._refdata_job.run_stock_basic = AsyncMock()
-        scheduler._refdata_job.run_backward_factor = AsyncMock()
-        scheduler._financial_job.run = AsyncMock()
         scheduler._fundflow_job.run_daily = AsyncMock()
         scheduler._cleanup_job.run = AsyncMock(
             return_value={"sync_state_deleted": 0, "log_dirs_deleted": 0}
@@ -124,25 +114,13 @@ class TestChainOrder:
         today = date(2025, 3, 29)
         await scheduler._run_kline_sync_with_cleanup(today)
 
-        scheduler._financial_job.run.assert_called_once_with(today)
-        scheduler._fundflow_job.run_daily.assert_called_once_with(today)
+        scheduler._fundflow_job.run_daily.assert_not_called()
         scheduler._cleanup_job.run.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_chain_calls_fundflow_after_financial(self):
-        """顺序断言:financial.run 必须在 fundflow_job.run_daily 之前调用."""
+    async def test_0010_job_order_fundflow_before_financial(self):
+        """0:10 job 内顺序:fundflow → financial(沿用 0:10 排期)."""
         scheduler = AutoSyncScheduler()
-        scheduler._kline_job.run_minute = AsyncMock()
-        scheduler._kline_job.run_day = AsyncMock()
-        scheduler._kline_job.run_week = AsyncMock()
-        scheduler._kline_job.run_month = AsyncMock()
-        scheduler._kline_job.run_season = AsyncMock()
-        scheduler._kline_job.run_year = AsyncMock()
-        scheduler._refdata_job.run_stock_basic = AsyncMock()
-        scheduler._refdata_job.run_backward_factor = AsyncMock()
-        scheduler._cleanup_job.run = AsyncMock(
-            return_value={"sync_state_deleted": 0, "log_dirs_deleted": 0}
-        )
         order: list[str] = []
 
         async def _record_financial(*args, **kwargs):
@@ -153,43 +131,50 @@ class TestChainOrder:
 
         scheduler._financial_job.run = AsyncMock(side_effect=_record_financial)
         scheduler._fundflow_job.run_daily = AsyncMock(side_effect=_record_fundflow)
+        scheduler._cleanup_job.run = AsyncMock()
+        # stub 0:10 沿途其他 job
+        scheduler._industry_index_job.run_daily = AsyncMock()
+        scheduler._exchange_index_job.run_daily = AsyncMock()
+        scheduler._refdata_job.run_stock_basic = AsyncMock()
+        scheduler._refdata_job.run_backward_factor = AsyncMock()
+        scheduler._exchange_index_job.run_dimensions = AsyncMock()
+        scheduler._industry_index_job.run_dimensions = AsyncMock()
+        scheduler._kline_job.run_day = AsyncMock()
+        scheduler._kline_job.run_minute = AsyncMock()
 
         today = date(2025, 3, 29)
-        await scheduler._run_kline_sync_with_cleanup(today)
+        await scheduler._run_minute_cover_with_cleanup(today)
 
-        assert order.index("financial") < order.index("fundflow"), (
-            f"financial 必须在 fundflow 之前,实际顺序: {order}"
+        assert order.index("fundflow") < order.index("financial"), (
+            f"fundflow 必须在 financial 之前,实际顺序: {order}"
         )
 
 
 class TestFailureNonBlocking:
     """单 job 失败非阻断(02-08 try/except 设计)."""
 
-    @pytest.mark.asyncio
     async def test_fundflow_failure_does_not_block_cleanup(self):
-        """fundflow_job.run_daily 抛异常时,cleanup 仍应执行(范围修订后无 baostock)."""
+        """0:10 job 内 fundflow 抛异常时,不阻断后续(沿用 try/except 隔离)."""
         scheduler = AutoSyncScheduler()
-        scheduler._kline_job.run_minute = AsyncMock()
-        scheduler._kline_job.run_day = AsyncMock()
-        scheduler._kline_job.run_week = AsyncMock()
-        scheduler._kline_job.run_month = AsyncMock()
-        scheduler._kline_job.run_season = AsyncMock()
-        scheduler._kline_job.run_year = AsyncMock()
-        scheduler._refdata_job.run_stock_basic = AsyncMock()
-        scheduler._refdata_job.run_backward_factor = AsyncMock()
-        scheduler._financial_job.run = AsyncMock()
         scheduler._fundflow_job.run_daily = AsyncMock(
             side_effect=RuntimeError("akshare down")
         )
-        scheduler._cleanup_job.run = AsyncMock(
-            return_value={"sync_state_deleted": 0, "log_dirs_deleted": 0}
-        )
+        # stub 0:10 沿途其他 job
+        scheduler._industry_index_job.run_daily = AsyncMock()
+        scheduler._exchange_index_job.run_daily = AsyncMock()
+        scheduler._financial_job.run = AsyncMock()
+        scheduler._refdata_job.run_stock_basic = AsyncMock()
+        scheduler._refdata_job.run_backward_factor = AsyncMock()
+        scheduler._exchange_index_job.run_dimensions = AsyncMock()
+        scheduler._industry_index_job.run_dimensions = AsyncMock()
+        scheduler._kline_job.run_day = AsyncMock()
+        scheduler._kline_job.run_minute = AsyncMock()
 
         today = date(2025, 3, 29)
         # 不应抛
-        await scheduler._run_kline_sync_with_cleanup(today)
+        await scheduler._run_minute_cover_with_cleanup(today)
 
-        scheduler._cleanup_job.run.assert_called_once()
+        scheduler._kline_job.run_day.assert_called_once_with(today)
 
 
 class TestGetSectionBindingRegression:
