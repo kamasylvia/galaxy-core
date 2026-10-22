@@ -297,14 +297,14 @@ class TestSignalAudit:
 class TestPostSyncCleanup:
     """Tests for post-sync cleanup flow.
 
-    Order: day → week → month → season → year
-    → refdata → financial → cleanup.
-    (minute 移出主链,2026-10-22:次日 0:10 独立 cover job)
+    Order: 指数日度 → refdata → financial → fundflow → cleanup.
+    (K 线 day/week/month/season/year/min 全移出主链,改走 0:10 独立 job;
+    白天 TGW 独占给 realtime_sub)
     """
 
     @pytest.mark.asyncio
     async def test_run_kline_sync_with_cleanup(self):
-        """All kline periods → refdata → financial → cleanup in order."""
+        """非 K 线 job → refdata → financial → cleanup in order."""
         scheduler = AutoSyncScheduler()
         scheduler._kline_job.run_day = AsyncMock()
         scheduler._kline_job.run_week = AsyncMock()
@@ -322,8 +322,12 @@ class TestPostSyncCleanup:
 
         await scheduler._run_kline_sync_with_cleanup(today)
 
-        scheduler._kline_job.run_day.assert_called_once_with(today)
-    @pytest.mark.asyncio
+        # K 线已移出主链:主链不得再调
+        scheduler._kline_job.run_day.assert_not_called()
+        scheduler._kline_job.run_week.assert_not_called()
+        scheduler._kline_job.run_month.assert_not_called()
+        scheduler._kline_job.run_season.assert_not_called()
+        scheduler._kline_job.run_year.assert_not_called()
     async def test_chain_isolation_step_failure_does_not_block_others(self):
         """回归: 单步 raise 不阻断后续步骤(AGENTS.md 2026-07-28 Bug 3)。
 
@@ -332,13 +336,8 @@ class TestPostSyncCleanup:
         全跳 11 天。修后各步独立 try/except,失败记 log 后继续。
         """
         scheduler = AutoSyncScheduler()
-        # run_day 抛异常,验证后续仍执行
-        scheduler._kline_job.run_day = AsyncMock(side_effect=RuntimeError("day boom"))
-        scheduler._kline_job.run_week = AsyncMock()
-        scheduler._kline_job.run_month = AsyncMock()
-        scheduler._kline_job.run_season = AsyncMock()
-        scheduler._kline_job.run_year = AsyncMock()
-        scheduler._refdata_job.run_stock_basic = AsyncMock()
+        # refdata 抛异常,验证后续仍执行(K 线已移出主链,用 refdata 做故障注入)
+        scheduler._refdata_job.run_stock_basic = AsyncMock(side_effect=RuntimeError("ref boom"))
         scheduler._refdata_job.run_backward_factor = AsyncMock()
         scheduler._financial_job.run = AsyncMock()
         scheduler._cleanup_job.run = AsyncMock(
@@ -350,12 +349,7 @@ class TestPostSyncCleanup:
         # 不应抛异常
         await scheduler._run_kline_sync_with_cleanup(today)
 
-        # run_day 失败,但后续所有步骤仍被调用
-        scheduler._kline_job.run_week.assert_called_once_with(today)
-        scheduler._kline_job.run_month.assert_called_once_with(today)
-        scheduler._kline_job.run_season.assert_called_once_with(today)
-        scheduler._kline_job.run_year.assert_called_once_with(today)
-        scheduler._refdata_job.run_stock_basic.assert_called_once_with(today)
+        # refdata 失败,但后续所有步骤仍被调用
         scheduler._refdata_job.run_backward_factor.assert_called_once_with(today)
         scheduler._financial_job.run.assert_called_once_with(today)
         scheduler._cleanup_job.run.assert_called_once()

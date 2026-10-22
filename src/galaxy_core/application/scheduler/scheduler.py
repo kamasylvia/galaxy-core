@@ -415,16 +415,12 @@ class AutoSyncScheduler:
     async def _check_kline_catchup_trigger(
         self, today: date, current_time: time
     ) -> None:
-        """K线补同步(catch-up,2026-08-20 AM 数据发布延迟根治)。
+        """日间补同步(catch-up,16:10):0:10 K 线全量链未闭环时补跑非 K 线部分。
 
-        AM 服务端 T-1 K线数据发布时刻不稳定(实测约半数交易日凌晨未发布,
-        整夜 7 次重试全空,SDK 把查询 date_range 上界截到 T-2;次日才可用,
-        见 AGENTS.md 2026-08-20)。此触发在白天(默认 07:10)检查昨日
-        kline_day 是否已同步,未同步则重跑同步链:
-        - 链内各 job 由 is_synced 门控,已同步的自动跳过(幂等);
-        - kline_day 重跑时若数据已发布则当天闭环,不再等次日凌晨。
-        防并发:00:10 的同步链可能仍在重试中(kline 重试跨 6h),此时不得
-        再起第二条链(API 不支持并发,SDK 单例)。
+        2026-10-22 起 K 线(day/week/month/season/year/min)全部改走 0:10
+        独立 job,白天 TGW 留给 realtime_sub。本触发只补非 K 线
+        (fundflow/financial/refdata/industry):门控仍查 kline_day
+        success(0:10 已闭环则跳过,幂等)。
         """
         trigger_hour = self._config.get("kline_catchup_hour", 7)
         trigger_minute = self._config.get("kline_catchup_minute", 10)
@@ -555,15 +551,26 @@ class AutoSyncScheduler:
             task.add_done_callback(self._on_task_done)
 
     async def _run_minute_cover_with_cleanup(self, today: date) -> None:
-        """分钟线 T+1 定稿覆盖执行体:run_minute 拉昨日全 8 周期覆盖。
+        """0:10 K 线全量 job:日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
 
-        run_minute 同步昨日窗口,upsert 按 (symbol, trade_time) 覆盖
-        realtime_sub 的 is_final=false 行 → is_final=true 定稿。
-        AM 常 T+2 才发布(昨日 0:10 覆盖后仍有 is_final=false 残留):
-        残留追扫往回 N 天(today-2..today-8),残留>0 即重跑该日覆盖,
-        直到全定稿。满 8 天仍有残留记 error 待人工(AM 侧缺数)。
-        覆盖后应用 retention policy(minute_retention_days,滚动删超期 chunk)。
+        白天 TGW 独占给 realtime_sub(9:00-15:30),K 线全量改走凌晨串行。
+        1) run_day/week/month/season/year 拉昨日(各自由 is_synced 门控);
+        2) run_minute 同窗覆盖 realtime_sub 的 is_final=false → true;
+        3) 残留追扫往回 8 天(T+2 才发布场景);
+        4) retention policy 滚动删超期 chunk。
         """
+        logger.info("运行 0:10 K 线全量同步")
+        for name, fn in (
+            ("日线", self._kline_job.run_day),
+            ("周线", self._kline_job.run_week),
+            ("月线", self._kline_job.run_month),
+            ("季线", self._kline_job.run_season),
+            ("年线", self._kline_job.run_year),
+        ):
+            try:
+                await fn(today)
+            except Exception as e:
+                logger.error(f"{name}同步失败: {e}", exc_info=True)
         logger.info("运行分钟线定稿覆盖")
         try:
             await self._kline_job.run_minute(today)
@@ -685,15 +692,10 @@ class AutoSyncScheduler:
         指数日度数据（industry_daily/index_weight/industry_weight）紧跟 K线 day，
         维度数据（成分股/基本信息）紧跟 refdata，财务数据同步最后运行。
         """
-        # 1. 分钟线同步已移出主链(2026-10-22):盘中由 realtime_sub 实时写,
-        # 次日 0:10 独立 minute cover job 用 query_kline 覆盖定稿。白天 TGW 留给实时订阅。
-
-        # 2. 日线同步
-        logger.debug("运行日线同步")
-        try:
-            await self._kline_job.run_day(today)
-        except Exception as e:
-            logger.error(f"日线同步失败: {e}", exc_info=True)
+        # 1. 分钟线同步已移出主链(2026-10-22)。
+        # 2. 日线/周/月/季/年已移出主链(2026-10-22):白天 TGW 留给 realtime_sub
+        # (9:00-15:30 独占,SDK 单例互踢)。K 线全量(日+长周期+分钟定稿覆盖)
+        # 改走次日 0:10 独立 job(_run_minute_cover_with_cleanup),串行无并发。
 
         # 2.5 指数日度数据（industry_daily + index_weight + industry_weight）
         logger.debug("运行指数日度数据同步")
@@ -705,37 +707,6 @@ class AutoSyncScheduler:
             await self._industry_index_job.run_daily(today)
         except Exception as e:
             logger.error(f"行业指数日度同步失败: {e}", exc_info=True)
-
-        # 等待同步稳定
-        await asyncio.sleep(5)
-
-        # 3. 周线同步（按需）
-        logger.debug("运行周线同步")
-        try:
-            await self._kline_job.run_week(today)
-        except Exception as e:
-            logger.error(f"周线同步失败: {e}", exc_info=True)
-
-        # 4. 月线同步（按需）
-        logger.debug("运行月线同步")
-        try:
-            await self._kline_job.run_month(today)
-        except Exception as e:
-            logger.error(f"月线同步失败: {e}", exc_info=True)
-
-        # 5. 季线同步（按需）
-        logger.debug("运行季线同步")
-        try:
-            await self._kline_job.run_season(today)
-        except Exception as e:
-            logger.error(f"季线同步失败: {e}", exc_info=True)
-
-        # 6. 年线同步（按需）
-        logger.debug("运行年线同步")
-        try:
-            await self._kline_job.run_year(today)
-        except Exception as e:
-            logger.error(f"年线同步失败: {e}", exc_info=True)
 
         # 7. 参考数据 stock_basic 同步(P0: 每周,快)
         # 2026-08-04 拆分:原 refdata_job.run(today) 含 stock_basic + backward_factor,
