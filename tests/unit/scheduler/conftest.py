@@ -33,8 +33,8 @@ mock_config_loader.get_section = MagicMock(
         "max_retries": 3,
         "retry_delay_minutes": 5,
         "routine_lookback_periods": 10,
-        # kline 子表(2026-08-11):前缀匹配测试用
-        "kline": {"max_retries": 6},
+        # kline 子表:与生产 settings.toml [scheduler.kline] 一致(max_retries=3)
+        "kline": {"max_retries": 3},
     }
 )
 sys.modules["galaxy_core.shared_kernel.utils.config_loader"] = mock_config_loader

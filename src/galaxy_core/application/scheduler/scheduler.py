@@ -376,11 +376,8 @@ class AutoSyncScheduler:
         prev_days = await self._calendar_store.get_trading_days(month_start, yesterday)
         expected_calendar_days = (yesterday - month_start).days + 1  # inclusive count
 
-        if len(prev_days) == expected_calendar_days:
-            return True
-
-        # 今天之前有其他非交易日（周末/节假日）
-        return False
+        # 当月首个非交易日 ⟺ 从月初到昨天全是交易日；否则之前已有非交易日
+        return len(prev_days) == expected_calendar_days
 
     async def _check_minute_cover_trigger(
         self, today: date, current_time: time
