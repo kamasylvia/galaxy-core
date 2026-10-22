@@ -35,11 +35,10 @@ _now_cst = now_cst
 class AutoSyncScheduler:
     """按照 SCHED-01 的自动同步调度器，使用自定义 asyncio 循环。
 
-    持续运行，每分钟检查触发条件：
-    - kline_trigger_hour/minute 配置的时间触发 K 线同步（生产默认 00:10）
-    - 00:00：日历检查（仅 12/20-12/31 真同步下一年交易日历，非 12 月 CalendarSyncJob.run
-      立即 return 空转；见 calendar_sync_job.py:45）
-    - 00:10：K线同步（kline_trigger_hour/minute 配置，生产默认 00:10，仅交易日后一天）
+    持续运行，每分钟检查触发条件（时间全读 config/settings.toml [scheduler]）：
+    - minute_cover_hour/minute:全量 job(非K线+日线长周期+分钟 cover+追扫+retention)
+    - realtime_sub_start/end:盘中 spawn/kill 实时订阅子进程(白天 TGW 独占)
+    - 日历检查（仅 12/20-12/31 真同步下一年交易日历）
 
     所有触发时刻按北京时间解释（`_now_cst()`，服务器系统时区为 UTC 但业务语义时间
     为北京时间；见模块级 CST 注释）。
@@ -286,7 +285,7 @@ class AutoSyncScheduler:
                 )
 
             # 轮询触发条件(2026-10-22 起白天零 SDK 调用:
-            # 0:10 全量(minute_cover_*);realtime 由本进程 spawn/kill;00:00 日历)
+            # 全量(minute_cover_*);realtime 由本进程 spawn/kill;日历)
             await self._check_minute_cover_trigger(today, current_time)
             await self._check_realtime_sub_window(today, current_time)
             await self._check_calendar_trigger(today, current_time)
@@ -386,11 +385,11 @@ class AutoSyncScheduler:
     async def _check_minute_cover_trigger(
         self, today: date, current_time: time
     ) -> None:
-        """分钟线 T+1 定稿覆盖(2026-10-22 引入,次日 0:10).
+        """分钟线 T+1 定稿覆盖(触发时刻读 minute_cover_hour/minute).
 
         盘中 realtime_sub 已实时写当日分钟线(is_final=false);此处用
         query_kline 同窗拉取定稿覆盖(is_final=true,残缺尾巴修正)。
-        仅昨天是交易日时触发。防并发:与 kline 主链同名任务互斥
+        仅昨天是交易日时触发。防并发:同名任务互斥
         (API 不支持并发,SDK 单例)。
         """
         trigger_hour = self._config.get("minute_cover_hour", 0)
@@ -469,16 +468,16 @@ class AutoSyncScheduler:
 
 
     async def _run_minute_cover_with_cleanup(self, today: date) -> None:
-        """0:10 全量 job:非 K 线 → 日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
+        """全量 job:非 K 线 → 日线+长周期 T+1 → 分钟定稿覆盖 → 残留追扫 → retention。
 
-        白天 TGW 独占给 realtime_sub(9:00-15:30),全量改走凌晨串行。
+        白天 TGW 独占给 realtime_sub,全量改走凌晨串行(触发时刻读 minute_cover_*)。
         1) industry/fundflow/financial/refdata(非 K 线,各自由 is_synced 门控);
         2) run_day/week/month/season/year 拉昨日;
         3) run_minute 同窗覆盖 realtime_sub 的 is_final=false → true;
-        4) 残留追扫往回 8 天(T+2 才发布场景);
-        5) retention policy 滚动删超期 chunk。
+        4) 残留追扫往回 minute_rescan_days 天(T+2 才发布场景);
+        5) retention policy 滚动删超期 chunk(minute_retention_days)。
         """
-        logger.info("运行 0:10 全量同步:非 K 线")
+        logger.info("运行全量同步:非 K 线")
         for name, fn in (
             ("行业指数日度", self._industry_index_job.run_daily),
             ("交易所指数日度", self._exchange_index_job.run_daily),
@@ -499,7 +498,7 @@ class AutoSyncScheduler:
             await self._industry_index_job.run_dimensions(today)
         except Exception as e:
             logger.error(f"行业指数维度同步失败: {e}", exc_info=True)
-        logger.info("运行 0:10 K 线全量同步")
+        logger.info("运行 K 线全量同步")
         for name, fn in (
             ("日线", self._kline_job.run_day),
             ("周线", self._kline_job.run_week),
