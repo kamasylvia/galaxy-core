@@ -698,17 +698,27 @@ class AutoSyncScheduler:
         logger.info("正在停止调度器...")
         self._running = False
 
-        # 先停 realtime_sub 子进程(否则 systemd stop-sigterm 超时 SIGKILL)
-        # 子进程常阻塞在 SDK sub_data.run() (C 扩展),SIGTERM 延迟响应:
-        # terminate 后等 5s,不退出直接 kill,不拖主进程退出。
+        # 先停 realtime_sub 子进程组(否则 systemd stop-sigterm 超时 SIGKILL)
+        # 子进程常阻塞在 SDK sub_data.run() (C 扩展),SIGTERM 延迟响应;
+        # Popen 用 start_new_session=True, kill 单个 uv 外壳会留孤儿 python,
+        # 必须 killpg 整个进程组。等 5s 不退出直接 killpg,不拖主进程退出。
+        import os as _os
+        import signal as _sig
+
         proc = getattr(self, "_realtime_proc", None)
         if proc is not None and proc.poll() is None:
-            logger.info("停止 realtime_sub 子进程")
-            proc.terminate()
+            logger.info("停止 realtime_sub 子进程组")
+            try:
+                _os.killpg(proc.pid, _sig.SIGTERM)
+            except Exception:
+                pass
             try:
                 await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
             except Exception:
-                proc.kill()
+                try:
+                    _os.killpg(proc.pid, _sig.SIGKILL)
+                except Exception:
+                    pass
 
         # 取消所有待处理任务
         for task in self._tasks:
