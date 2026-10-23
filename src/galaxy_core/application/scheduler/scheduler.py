@@ -699,12 +699,14 @@ class AutoSyncScheduler:
         self._running = False
 
         # 先停 realtime_sub 子进程(否则 systemd stop-sigterm 超时 SIGKILL)
+        # 子进程常阻塞在 SDK sub_data.run() (C 扩展),SIGTERM 延迟响应:
+        # terminate 后等 5s,不退出直接 kill,不拖主进程退出。
         proc = getattr(self, "_realtime_proc", None)
         if proc is not None and proc.poll() is None:
             logger.info("停止 realtime_sub 子进程")
             proc.terminate()
             try:
-                await asyncio.to_thread(proc.wait, 10)
+                await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
             except Exception:
                 proc.kill()
 
