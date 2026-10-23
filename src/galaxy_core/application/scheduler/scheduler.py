@@ -267,42 +267,50 @@ class AutoSyncScheduler:
         # SIGINT:asyncio 默认转 KeyboardInterrupt,此处先记录再走原有退出路径。
         loop = asyncio.get_running_loop()
         self._register_signal_audit(loop)
+        try:
+            self._main_task = asyncio.current_task()
+        except RuntimeError:
+            self._main_task = None
 
         # 启动验证
         await self._verify_trading_calendar()
 
-        while self._running:
-            now = _now_cst()
-            current_time = now.time()
-            today = now.date()
+        try:
+            while self._running:
+                now = _now_cst()
+                current_time = now.time()
+                today = now.date()
 
-            # 心跳日志(每小时整点一次,避免每分钟刷屏;2026-07-29 观测盲区修复:
-            # 原主循环无 INFO 级日志,scheduler 活着但静默不跑时无任何告警线索)
-            if current_time.minute == 0:
-                logger.info(
-                    f"心跳: 北京 {now.strftime('%Y-%m-%d %H:%M')} "
-                    f"活跃task={len(self._tasks)} _running={self._running}"
-                )
+                # 心跳日志(每小时整点一次,避免每分钟刷屏;2026-07-29 观测盲区修复:
+                # 原主循环无 INFO 级日志,scheduler 活着但静默不跑时无任何告警线索)
+                if current_time.minute == 0:
+                    logger.info(
+                        f"心跳: 北京 {now.strftime('%Y-%m-%d %H:%M')} "
+                        f"活跃task={len(self._tasks)} _running={self._running}"
+                    )
 
-            # 轮询触发条件(2026-10-22 起白天零 SDK 调用:
-            # 全量(minute_cover_*);realtime 由本进程 spawn/kill;日历)
-            await self._check_minute_cover_trigger(today, current_time)
-            await self._check_realtime_sub_window(today, current_time)
-            await self._check_calendar_trigger(today, current_time)
+                # 轮询触发条件(2026-10-22 起白天零 SDK 调用:
+                # 全量(minute_cover_*);realtime 由本进程 spawn/kill;日历)
+                await self._check_minute_cover_trigger(today, current_time)
+                await self._check_realtime_sub_window(today, current_time)
+                await self._check_calendar_trigger(today, current_time)
 
-            # 检查周期性同步（测试模式）
-            if self._auto_sync_interval:
-                await self._check_interval_sync(today, now)
+                # 检查周期性同步（测试模式）
+                if self._auto_sync_interval:
+                    await self._check_interval_sync(today, now)
 
-            # 睡眠到下一分钟边界（避免漂移，参见 RESEARCH.md Pitfall 2）
-            seconds_to_next_minute = 60 - now.second
-            await asyncio.sleep(seconds_to_next_minute + 1)
-
-        # 循环正常退出(_running 被信号 handler 或 stop() 设 False):确保清理。
-        # 信号 handler(_register_signal_audit)设 _running=False 后走此路径,
-        # 必须调用 stop() 关闭 DB 连接 + 释放 PID 锁(stop 幂等,重复调用安全)。
-        if not self._stopped:
-            await self.stop()
+                # 睡眠到下一分钟边界（避免漂移，参见 RESEARCH.md Pitfall 2）
+                seconds_to_next_minute = 60 - now.second
+                await asyncio.sleep(seconds_to_next_minute + 1)
+        except asyncio.CancelledError:
+            logger.info("主循环被取消(信号退出),进清理")
+            raise
+        finally:
+            # 循环正常退出(_running False)或被 cancel:确保清理。
+            # 必须调用 stop() 关闭 DB 连接 + 释放 PID 锁 + 杀订阅子进程
+            # (stop 幂等,重复调用安全)。
+            if not self._stopped:
+                await self.stop()
 
     def _register_signal_audit(self, loop: asyncio.AbstractEventLoop) -> None:
         """注册 SIGINT/SIGTERM 审计 handler(2026-06-26).
@@ -324,11 +332,14 @@ class AutoSyncScheduler:
                 f"PID={os.getpid()} _running={self._running} 活跃task={active_tasks}。"
                 f"触发优雅退出(sender pid 需内核 auditd 追溯)"
             )
-            # 触发优雅退出:主循环 while self._running 自然结束 → run_scheduler 走
-            # 正常 return 0(非 KeyboardInterrupt 路径,避免 asyncio 默认 SIGINT 行为
-            # 把信号转成未捕获异常)。信号幂等:重复信号不再处理。
+            # 触发优雅退出:cancel 主循环 task(中断 sleep/DB await,立即进
+            # CancelledError → run_forever finally 调 stop()),再设 flag。
+            # 光设 flag 要等当前 await 结束(DB hang 时退不出,systemd SIGKILL)。
             if self._running:
                 self._running = False
+            main_task = getattr(self, "_main_task", None)
+            if main_task is not None and not main_task.done():
+                main_task.cancel()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
