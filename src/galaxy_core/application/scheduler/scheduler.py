@@ -767,6 +767,10 @@ async def run_scheduler(replace: bool = False) -> int:
     except KeyboardInterrupt:
         logger.info("收到键盘中断信号")
         await scheduler.stop()
+    except asyncio.CancelledError:
+        # 信号 handler cancel 主循环的预期路径:stop() 已在 finally 执行,
+        # 此处吞掉转正常返回 0(否则 exit 1 被 systemd 判 failed)。
+        pass
     except Exception as e:
         logger.error(f"调度器错误: {e}")
         await scheduler.stop()
