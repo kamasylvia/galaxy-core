@@ -111,21 +111,29 @@ async def _upsert_batch(period: str, bars: list) -> int:
     interval = Interval(period)
     kline_bars = []
     for b in bars:
-        # SDK OnKLine 回调对象: code/trade_time/open/high/low/close/volume/amount
-        code = getattr(b, "code", None) or b.get("code")
-        tt = getattr(b, "trade_time", None) or b.get("trade_time")
+        # SDK OnKLine 回调: pydantic Kline 对象(文档 4.2.6 字段)或 dict
+        if hasattr(b, "model_dump"):
+            d = b.model_dump()
+        elif isinstance(b, dict):
+            d = b
+        else:
+            d = {k: getattr(b, k, None) for k in (
+                "code", "trade_time", "open", "high", "low",
+                "close", "volume", "amount")}
+        code = d.get("code")
+        tt = d.get("trade_time")
         if isinstance(tt, str):
             tt = datetime.fromisoformat(tt)
         kline_bars.append(
             KlineBar(
                 symbol=code,
                 trade_time=tt,
-                open=getattr(b, "open", None) if not isinstance(b, dict) else b.get("open"),
-                high=getattr(b, "high", None) if not isinstance(b, dict) else b.get("high"),
-                low=getattr(b, "low", None) if not isinstance(b, dict) else b.get("low"),
-                close=getattr(b, "close", None) if not isinstance(b, dict) else b.get("close"),
-                volume=getattr(b, "volume", None) if not isinstance(b, dict) else b.get("volume"),
-                amount=getattr(b, "amount", None) if not isinstance(b, dict) else b.get("amount"),
+                open=d.get("open"),
+                high=d.get("high"),
+                low=d.get("low"),
+                close=d.get("close"),
+                volume=d.get("volume"),
+                amount=d.get("amount"),
                 security_type=SecurityType.EXTRA_STOCK_A,
                 is_final=False,
             )
