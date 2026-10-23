@@ -698,6 +698,16 @@ class AutoSyncScheduler:
         logger.info("正在停止调度器...")
         self._running = False
 
+        # 先停 realtime_sub 子进程(否则 systemd stop-sigterm 超时 SIGKILL)
+        proc = getattr(self, "_realtime_proc", None)
+        if proc is not None and proc.poll() is None:
+            logger.info("停止 realtime_sub 子进程")
+            proc.terminate()
+            try:
+                await asyncio.to_thread(proc.wait, 10)
+            except Exception:
+                proc.kill()
+
         # 取消所有待处理任务
         for task in self._tasks:
             task.cancel()

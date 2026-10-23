@@ -124,6 +124,8 @@ async def _upsert_batch(period: str, bars: list) -> int:
         tt = d.get("trade_time")
         if isinstance(tt, str):
             tt = datetime.fromisoformat(tt)
+        if not code or tt is None:
+            continue  # 无 symbol/时间戳的脏 bar 直接丢(ETF 无量/新股停牌时 SDK 回空)
         kline_bars.append(
             KlineBar(
                 symbol=code,
