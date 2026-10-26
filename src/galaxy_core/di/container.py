@@ -26,6 +26,7 @@ from galaxy_core.amazing_data.api.adapters.fund_flow_provider_adapter import (
     FundFlowProviderAdapter,
 )
 from galaxy_core.amazing_data.api.client import AmazingDataClient
+from galaxy_core.amazing_data.api.lazy_client import LazyAmazingDataClient
 from galaxy_core.application.scheduler.jobs.exchange_index_sync_job import (
     ExchangeIndexSyncJob,
 )
@@ -80,6 +81,16 @@ def _create_async_db_manager() -> AsyncDatabaseManager:
     return manager
 
 
+def _create_lazy_amazing_client() -> LazyAmazingDataClient:
+    """创建懒登录 AmazingData 客户端代理(2026-10-26 TGW 互踢修复).
+
+    构造 ≠ 登录:scheduler 启动构造链、白天窗口(09:00-15:30,含 11:50
+    refresh 重启)一律不触发 SDK 登录;首次实际 SDK 方法调用(凌晨 00:10
+    全量链等)才经 from_config 登录。TGW 单会话互踢详见 lazy_client.py。
+    """
+    return LazyAmazingDataClient(AmazingDataClient.from_config)
+
+
 class Container(containers.DeclarativeContainer):
     """应用 DI 容器 — 声明式定义所有 provider.
 
@@ -94,7 +105,7 @@ class Container(containers.DeclarativeContainer):
     db_manager = providers.Singleton(_create_async_db_manager)
 
     amazing_data_client = providers.Singleton(
-        AmazingDataClient.from_config,
+        _create_lazy_amazing_client,
     )
 
     # === Provider Adapters（Singleton）===

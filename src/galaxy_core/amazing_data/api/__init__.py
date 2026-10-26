@@ -4,7 +4,9 @@
 """
 
 from .client import AmazingDataClient
+from .lazy_client import LazyAmazingDataClient
 
 __all__ = [
     "AmazingDataClient",
+    "LazyAmazingDataClient",
 ]

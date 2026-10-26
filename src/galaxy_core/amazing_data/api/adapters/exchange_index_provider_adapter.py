@@ -7,6 +7,7 @@ asyncio.to_thread() 集中在此 adapter 层，应用层代码完全异步。
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -61,7 +62,9 @@ class ExchangeIndexProviderAdapter:
         end_date: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """获取交易所指数日权重（asyncio.to_thread 包装同步 SDK 调用）."""
-        kwargs: dict[str, object] = {
+        # Any 值类型:to_thread 对 **kwargs 逐参核型,object 与
+        # bool/int|None/str 形参不兼容(mypy strict);可选键条件加入。
+        kwargs: dict[str, Any] = {
             "code_list": code_list,
             "local_path": local_path,
             "is_local": is_local,

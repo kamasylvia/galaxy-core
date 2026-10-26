@@ -61,6 +61,9 @@ class AutoSyncScheduler:
 
         container = create_container()
         self._db_manager = container.db_manager()
+        # 懒登录 AM 客户端代理(2026-10-26 TGW 互踢修复):构造≠登录,
+        # 仅用于 spawn realtime_sub 前主动登出释放会话(见 _check_realtime_sub_window)
+        self._amazing_client = container.amazing_data_client()
         self._calendar_store = container.calendar_store()
         self._reference_provider = container.reference_provider()
         self._kline_service = container.kline_service()
@@ -463,6 +466,14 @@ class AutoSyncScheduler:
             days = await self._calendar_store.get_trading_days(today, today)
             if not days:
                 return
+            # spawn 前主动登出主进程持有的 AM 会话(2026-10-26 互踢修复第三部分):
+            # 凌晨 00:10 链登录的会话会一直持有到 09:00,不释放则 realtime_sub
+            # 登录触发 SDK ForceLogout 把主进程踢死(TGW 单会话互踢)。
+            # 登出失败仅告警不阻塞 spawn——宁可回退现状,不放大故障。
+            try:
+                self._amazing_client.logout()
+            except Exception as e:
+                logger.warning(f"spawn 前登出 AM 会话失败(继续 spawn): {e}")
             log_path = f"logs/realtime_sub_{today.strftime('%Y%m%d')}.log"
             logger.info(f"拉起 realtime_sub ({start_str}-{end_str})")
             with open(log_path, "ab") as lf:

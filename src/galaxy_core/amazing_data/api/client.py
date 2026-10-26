@@ -104,10 +104,6 @@ from galaxy_core.shared_kernel.exceptions import (
     SDKBugError,
     SDKError,
 )
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .client import AmazingDataClient
 
 logger = logging.getLogger(__name__)
 

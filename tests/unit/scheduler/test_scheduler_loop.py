@@ -5,7 +5,7 @@ import contextlib
 import os
 import signal
 from datetime import date, datetime, time, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -740,3 +740,124 @@ class TestSchedulerIndexAutoChain:
         assert daily_idx < dims_idx
 
 
+
+
+class TestRealtimeSubWindowLogout:
+    """_check_realtime_sub_window spawn 前主动登出(2026-10-26 TGW 互踢修复).
+
+    00:10 全量链登录的 TGW 会话若一直持有到 09:00,realtime_sub 登录会触发
+    SDK ForceLogout 把主进程踢死(exit 0 静默死亡)→ systemd 重启 → 再互踢
+    → 死循环(10/23 208 轮)。修复三件套之三:spawn 前必须先 logout 释放
+    主进程会话;登出失败仅告警不阻塞 spawn(错误路径宁可回退现状)。
+    """
+
+    def _make_scheduler(self):
+        scheduler = AutoSyncScheduler()
+        # 交易日(get_trading_days 非空)
+        scheduler._calendar_store.get_trading_days = AsyncMock(
+            return_value=[date(2026, 10, 26)]
+        )
+        scheduler._amazing_client = MagicMock()
+        return scheduler
+
+    @pytest.mark.asyncio
+    async def test_spawn_calls_logout_before_popen(self):
+        """09:00 spawn 前必须先 logout,顺序不可颠倒."""
+        scheduler = self._make_scheduler()
+        events: list[str] = []
+        fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
+        fake_proc.returncode = None
+
+        def fake_logout():
+            events.append("logout")
+
+        def fake_popen(cmd, **kwargs):
+            events.append("popen")
+            return fake_proc
+
+        scheduler._amazing_client.logout = fake_logout
+
+        with patch("subprocess.Popen", side_effect=fake_popen), patch(
+            "builtins.open", mock_open()
+        ):
+            await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(9, 0))
+
+        assert events == ["logout", "popen"]
+
+    @pytest.mark.asyncio
+    async def test_spawn_command_is_realtime_sub(self):
+        """spawn 命令保持 uv run scripts/realtime_sub.py + 独立进程组."""
+        scheduler = self._make_scheduler()
+        fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
+        fake_proc.returncode = None
+
+        with patch("subprocess.Popen", return_value=fake_proc) as mock_popen, patch(
+            "builtins.open", mock_open()
+        ):
+            await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(9, 0))
+
+        args, kwargs = mock_popen.call_args
+        assert args[0] == ["uv", "run", "scripts/realtime_sub.py"]
+        assert kwargs.get("start_new_session") is True
+
+    @pytest.mark.asyncio
+    async def test_logout_failure_does_not_block_spawn(self):
+        """logout 抛异常仅告警,spawn 照常执行(宁可回退现状不放大故障)."""
+        scheduler = self._make_scheduler()
+        scheduler._amazing_client.logout = MagicMock(
+            side_effect=RuntimeError("logout boom")
+        )
+        fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
+        fake_proc.returncode = None
+
+        with patch("subprocess.Popen", return_value=fake_proc) as mock_popen, patch(
+            "builtins.open", mock_open()
+        ):
+            await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(9, 0))
+
+        mock_popen.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_non_trading_day_no_spawn_no_logout(self):
+        """非交易日:不 spawn,也不登出(保持 00:10 链会话无意义但无害)."""
+        scheduler = AutoSyncScheduler()
+        scheduler._calendar_store.get_trading_days = AsyncMock(return_value=[])
+        scheduler._amazing_client = MagicMock()
+
+        with patch("subprocess.Popen") as mock_popen:
+            await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(9, 0))
+
+        mock_popen.assert_not_called()
+        scheduler._amazing_client.logout.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_alive_process_no_respawn_no_logout(self):
+        """子进程仍存活:不重复 spawn,也不登出(会话已归 realtime 独占)."""
+        scheduler = self._make_scheduler()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.returncode = None
+        scheduler._realtime_proc = proc
+
+        with patch("subprocess.Popen") as mock_popen:
+            await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(9, 0))
+
+        mock_popen.assert_not_called()
+        scheduler._amazing_client.logout.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_window_end_terminates_process(self):
+        """15:30 窗口结束:terminate 兜底(子进程也有到点自停)."""
+        scheduler = self._make_scheduler()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.returncode = None
+        scheduler._realtime_proc = proc
+
+        await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(15, 30))
+
+        proc.terminate.assert_called_once()
+        scheduler._amazing_client.logout.assert_not_called()

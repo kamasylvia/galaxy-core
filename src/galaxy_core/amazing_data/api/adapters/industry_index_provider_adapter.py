@@ -14,6 +14,7 @@ sync_with_retry 触发重试。注:超时只取消主任务 await,to_thread 启�
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -89,7 +90,9 @@ class IndustryIndexProviderAdapter:
         end_date: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """获取行业指数日权重."""
-        kwargs_iw: dict[str, object] = {
+        # Any 值类型:to_thread 对 **kwargs 逐参核型,object 与
+        # bool/int|None/str 形参不兼容(mypy strict);可选键条件加入。
+        kwargs_iw: dict[str, Any] = {
             "code_list": code_list,
             "local_path": local_path,
             "is_local": is_local,
@@ -117,7 +120,7 @@ class IndustryIndexProviderAdapter:
         end_date: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """获取行业指数日行情（含 PB/PE/市值，行业指数唯一行情源）."""
-        kwargs_d: dict[str, object] = {
+        kwargs_d: dict[str, Any] = {
             "code_list": code_list,
             "local_path": local_path,
             "is_local": is_local,
