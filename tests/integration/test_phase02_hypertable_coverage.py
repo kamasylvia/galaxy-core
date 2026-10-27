@@ -35,7 +35,7 @@ class TestHypertableRegistrationStatic:
     def test_timescale_py_registers_all_5_tables(self):
         """create_kline_hypertables 注册全部 5 张 Phase 02 表(范围修订后)."""
         src = Path(
-            "src/galaxy_core/database/core/timescale.py"
+            "data/src/galaxy_core/database/core/timescale.py"
         ).read_text()
         for table in PHASE02_HYPERTABLES:
             assert f'"{table}"' in src or f"'{table}'" in src or table in src, (
@@ -45,7 +45,7 @@ class TestHypertableRegistrationStatic:
     def test_timescale_py_does_not_register_dropped_tables(self):
         """范围修订回归:timescale.py 不应再注册已 drop 的 7 表."""
         src = Path(
-            "src/galaxy_core/database/core/timescale.py"
+            "data/src/galaxy_core/database/core/timescale.py"
         ).read_text()
         for dropped in [
             "baostock_stock_valuation_daily",

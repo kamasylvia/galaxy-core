@@ -1,7 +1,7 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+sys.path.insert(0, os.path.join(os.getcwd(), "data", "src"))
 
 try:
     from galaxy_core.shared_kernel.utils.time_parser import (

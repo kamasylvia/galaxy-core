@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 
-SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "galaxy_core"
+SRC_ROOT = Path(__file__).resolve().parents[2] / "data/src" / "galaxy_core"
 
 for package_name, package_path in {
     "galaxy_core": SRC_ROOT,

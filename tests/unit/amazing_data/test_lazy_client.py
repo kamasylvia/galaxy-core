@@ -19,7 +19,7 @@ from galaxy_core.amazing_data.api.client import AmazingDataClient
 from galaxy_core.amazing_data.api.lazy_client import LazyAmazingDataClient
 
 # adapters(services 等)实际调用的 client 同步方法面(2026-10-26 审计,
-# 见 grep "client.get_" src/galaxy_core/amazing_data/api/adapters/)。
+# 见 grep "client.get_" data/src/galaxy_core/amazing_data/api/adapters/)。
 ADAPTER_CALLED_METHODS = [
     "get_hist_code_list",
     "get_stock_list",

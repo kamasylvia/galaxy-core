@@ -10,6 +10,7 @@ from alembic import context
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, os.path.abspath("data/src"))
 load_dotenv()
 
 # 导入我们的模型

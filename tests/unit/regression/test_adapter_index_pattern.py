@@ -16,7 +16,7 @@ reference_provider_adapter.py:173 一致。
 
 from pathlib import Path
 
-SRC_ROOT = Path("src/galaxy_core")
+SRC_ROOT = Path("data/src/galaxy_core")
 REF_ADAPTER = SRC_ROOT / "amazing_data/api/adapters/reference_provider_adapter.py"
 EXCHANGE_ADAPTER = SRC_ROOT / "amazing_data/api/adapters/exchange_index_provider_adapter.py"
 AKSHARE_ADAPTER = SRC_ROOT / "third_party/akshare/adapters/akshare_fund_flow_adapter.py"

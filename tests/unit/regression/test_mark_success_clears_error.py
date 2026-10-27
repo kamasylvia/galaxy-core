@@ -19,7 +19,7 @@ import pytest
 from galaxy_core.application.scheduler.state_manager import SyncStateManager
 
 STATE_MANAGER_PATH = (
-    "src/galaxy_core/application/scheduler/state_manager.py"
+    "data/src/galaxy_core/application/scheduler/state_manager.py"
 )
 
 

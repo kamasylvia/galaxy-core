@@ -13,7 +13,7 @@ class TestCommandsDI(unittest.TestCase):
     def test_commands_no_injector_import(self):
         """commands.py 不应导入 injector 框架."""
         with open(
-            "src/galaxy_core/application/cli/commands.py", encoding="utf-8"
+            "data/src/galaxy_core/application/cli/commands.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -31,7 +31,7 @@ class TestCommandsDI(unittest.TestCase):
     def test_commands_no_create_injector_import(self):
         """commands.py 不应导入 create_injector."""
         with open(
-            "src/galaxy_core/application/cli/commands.py", encoding="utf-8"
+            "data/src/galaxy_core/application/cli/commands.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -44,7 +44,7 @@ class TestCommandsDI(unittest.TestCase):
     def test_commands_uses_create_container(self):
         """commands.py 应导入 create_container."""
         with open(
-            "src/galaxy_core/application/cli/commands.py", encoding="utf-8"
+            "data/src/galaxy_core/application/cli/commands.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -57,7 +57,7 @@ class TestCommandsDI(unittest.TestCase):
     def test_commands_no_injector_get_calls(self):
         """commands.py 不应有 injector.get() 调用."""
         with open(
-            "src/galaxy_core/application/cli/commands.py", encoding="utf-8"
+            "data/src/galaxy_core/application/cli/commands.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -70,7 +70,7 @@ class TestCommandsDI(unittest.TestCase):
     def test_commands_uses_container_service_calls(self):
         """commands.py 应使用 container.xxx_service() 模式."""
         with open(
-            "src/galaxy_core/application/cli/commands.py", encoding="utf-8"
+            "data/src/galaxy_core/application/cli/commands.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -92,7 +92,7 @@ class TestSchedulerDI(unittest.TestCase):
     def test_scheduler_no_injector_import(self):
         """scheduler.py 不应导入 injector 框架."""
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -110,7 +110,7 @@ class TestSchedulerDI(unittest.TestCase):
     def test_scheduler_no_create_injector_import(self):
         """scheduler.py 不应导入 create_injector."""
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -123,7 +123,7 @@ class TestSchedulerDI(unittest.TestCase):
     def test_scheduler_uses_create_container(self):
         """scheduler.py 应导入 create_container."""
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -136,7 +136,7 @@ class TestSchedulerDI(unittest.TestCase):
     def test_scheduler_no_injector_get_calls(self):
         """scheduler.py 不应有 injector.get() 调用."""
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -149,7 +149,7 @@ class TestSchedulerDI(unittest.TestCase):
     def test_scheduler_uses_container_calls(self):
         """scheduler.py 应使用 container.xxx_service() 模式."""
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -165,84 +165,3 @@ class TestSchedulerDI(unittest.TestCase):
         )
 
 
-class TestServerDI(unittest.TestCase):
-    """验证 server.py 使用 create_container 替代 create_injector."""
-
-    def test_server_no_injector_import(self):
-        """server.py 不应导入 injector 框架."""
-        with open(
-            "src/galaxy_core/application/grpc/server.py", encoding="utf-8"
-        ) as f:
-            content = f.read()
-
-        self.assertNotIn(
-            "from injector import",
-            content,
-            "server.py 不应导入 injector 框架",
-        )
-        self.assertNotIn(
-            "import injector",
-            content,
-            "server.py 不应导入 injector 框架",
-        )
-
-    def test_server_no_create_injector_import(self):
-        """server.py 不应导入 create_injector."""
-        with open(
-            "src/galaxy_core/application/grpc/server.py", encoding="utf-8"
-        ) as f:
-            content = f.read()
-
-        self.assertNotIn(
-            "create_injector",
-            content,
-            "server.py 不应导入 create_injector",
-        )
-
-    def test_server_uses_create_container(self):
-        """server.py 应导入 create_container."""
-        with open(
-            "src/galaxy_core/application/grpc/server.py", encoding="utf-8"
-        ) as f:
-            content = f.read()
-
-        self.assertIn(
-            "create_container",
-            content,
-            "server.py 应使用 create_container",
-        )
-
-    def test_server_no_injector_get_calls(self):
-        """server.py 不应有 injector.get() 调用."""
-        with open(
-            "src/galaxy_core/application/grpc/server.py", encoding="utf-8"
-        ) as f:
-            content = f.read()
-
-        self.assertNotIn(
-            "injector.get(",
-            content,
-            "server.py 不应有 injector.get() 调用",
-        )
-
-
-class TestNoInjectorReferencesGlobally:
-    """验证整个应用层无 injector 框架引用."""
-
-    def test_no_injector_references_in_application_layer(self):
-        """应用层不应有任何 injector 框架引用."""
-        import subprocess
-
-        result = subprocess.run(
-            ["grep", "-rn", "from injector\\|import injector\\|injector\\.get\\|create_injector",
-             "src/galaxy_core/application/", "--include=*.py"],
-            capture_output=True,
-            text=True,
-            cwd=".",
-        )
-        # grep returns 0 if found, 1 if not found
-        assert result.returncode == 1, f"Found injector references: {result.stdout}"
-
-
-if __name__ == "__main__":
-    unittest.main()

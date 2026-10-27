@@ -32,7 +32,7 @@ class TestConstructorInjectionTask1(unittest.TestCase):
     def test_no_singleton_import_in_kline(self):
         """kline.py 不应在底部导入 async_db_manager 单例."""
         with open(
-            "src/galaxy_core/database/services/kline.py", encoding="utf-8"
+            "data/src/galaxy_core/database/services/kline.py", encoding="utf-8"
         ) as f:
             content = f.read()
 
@@ -46,7 +46,7 @@ class TestConstructorInjectionTask1(unittest.TestCase):
     def test_init_py_no_kline_service_export(self):
         """__init__.py 不应导出 kline_service 实例."""
         with open(
-            "src/galaxy_core/database/services/__init__.py", encoding="utf-8"
+            "data/src/galaxy_core/database/services/__init__.py", encoding="utf-8"
         ) as f:
             content = f.read()
 

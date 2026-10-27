@@ -26,8 +26,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # 拷全量（验证优先；README/pyproject 同层，setuptools find src 生效）
 COPY pyproject.toml uv.lock README.md ./
 COPY wheels/ ./wheels/
-COPY packages/ ./packages/
-COPY src/ ./src/
+COPY provider/ ./provider/
+COPY data/src/ ./data/src/
 COPY config/ ./config/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./

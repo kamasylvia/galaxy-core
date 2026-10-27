@@ -271,7 +271,7 @@ class TestStateMachine:
         统一走 state_manager.mark_success 内置."""
         await job.run_daily(date(2024, 1, 15), target="sector")
         src = Path(
-            "src/galaxy_core/application/scheduler/jobs/fundflow_sync_job.py"
+            "data/src/galaxy_core/application/scheduler/jobs/fundflow_sync_job.py"
         ).read_text()
         assert "UPDATE sync_state" not in src
         assert "error_message=None" not in src
@@ -397,7 +397,7 @@ class TestSingleCodeLoop:
     async def test_no_asyncio_gather_serial(self):
         """源码无 asyncio.gather(严格串行)."""
         src = Path(
-            "src/galaxy_core/application/scheduler/jobs/fundflow_sync_job.py"
+            "data/src/galaxy_core/application/scheduler/jobs/fundflow_sync_job.py"
         ).read_text()
         assert "asyncio.gather" not in src
 

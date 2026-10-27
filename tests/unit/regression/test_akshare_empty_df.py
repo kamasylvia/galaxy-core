@@ -61,7 +61,7 @@ class TestSourceCodeDefensivePattern:
     def test_adapter_contains_empty_df_returns(self):
         from pathlib import Path
         src = Path(
-            "src/galaxy_core/third_party/akshare/adapters/akshare_fund_flow_adapter.py"
+            "data/src/galaxy_core/third_party/akshare/adapters/akshare_fund_flow_adapter.py"
         ).read_text()
         # 防御模式:方法 try/except + return pd.DataFrame()
         empty_returns = src.count("return pd.DataFrame()")

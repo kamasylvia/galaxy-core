@@ -8,23 +8,10 @@
 
 galaxy-core is a data ingestion and storage core: it fetches market data from China Galaxy Securities' AmazingData API, persists it to PostgreSQL/TimescaleDB, and serves it via a DB-backed OpenBB provider. K-line (candlestick) sync covers Chinese A-shares, ETFs, and other securities. Frontend lives in galaxy-web (Finanalyzer fork).
 
-> **架构目标(2026-09-28 重构立项,2026-10-21 前端切 Finanalyzer)**:OpenBB Platform 后端(本项目提供 DB-backed provider)+ Finanalyzer 前端(galaxy-web fork openbb-hka)。
-> 数据源仍是 AmazingData(采集管道不变)。
+> **三顶层架构(2026-10-27 重组定案)**:`data/`(写链:AmazingData→PG,包 galaxy_core)+ `provider/`(读链枢纽:OpenBB 标准,单出口目标)+ `api/`(finanalyzer/api fork,HTTP :8001 服务 galaxy-web 前端)。
+> 数据源仍是 AmazingData(采集管道不变);前端 galaxy-web(finanalyzer/app fork)、终端 galaxy-tui(gloomberb fork)在 workspace 另仓。详见 README 与 `.work/PLAN.md`。
 
 **Current Version Focus:** `EXTRA_ETF` (沪深两市 ETF）。当前版本数据库已包含 ETF 的 K-line、stock_basic、backward_factor 数据。A 股（`EXTRA_STOCK_A`）的 stock_basic、stock_status、backward_factor 也已同步，为未来版本预留。stock_status 仅支持 A 股，ETF 无此数据。
-
-## Proto / gRPC Integration
-
-This repository consumes protobuf schemas from `galaxy-web/proto/`.
-Generated Python code goes to `src/galaxy_core/gen/` (gitignored).
-
-To regenerate stubs after proto changes:
-```bash
-cd ../galaxy-web && just gen-python
-```
-
-The gRPC server entrypoint is `src/galaxy_core/application/grpc/server.py`.
-Service implementations live in `src/galaxy_core/application/grpc/`.
 
 ## Development Commands
 
@@ -88,7 +75,7 @@ galaxy-core calendar --year 2024
 
 ### Layer Structure
 ```
-src/galaxy_core/
+data/src/galaxy_core/
 ├── domain/                        # 纯业务逻辑层（无外部依赖）
 │   ├── value_objects.py           # Interval, SecurityType, KlineBar 等值对象
 │   ├── completeness/              # 完整性检查纯函数
@@ -118,8 +105,7 @@ src/galaxy_core/
 │           └── reference_provider_adapter.py
 ├── application/
 │   ├── cli/commands.py            # CLI 命令（通过 DI 获取服务）
-│   ├── scheduler/                 # 自动同步调度器
-│   └── grpc/server.py             # gRPC 服务端
+│   └── scheduler/                 # 自动同步调度器
 ├── database/
 │   ├── core/                      # 连接管理
 │   │   ├── async_connection.py    # AsyncDatabaseManager（单例）

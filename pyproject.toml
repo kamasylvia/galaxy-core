@@ -16,7 +16,6 @@ dependencies = [
     "psycopg2-binary>=2.9.5",
     "asyncpg>=0.29.0",
     "alembic>=1.13.1",
-    "connectrpc>=0.9.0,<0.10.0",
     "dependency-injector>=4.49.0",
     "toml>=0.10.2",
     "tqdm>=4.60.0",
@@ -26,7 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 openbb = [
-    "openbb-provider-amazingdata @ file:///${PROJECT_ROOT}/packages/openbb-provider-amazingdata",
+    "openbb-provider-amazingdata @ file:///${PROJECT_ROOT}/provider",
 ]
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -37,7 +36,7 @@ galaxy = "galaxy_core.__main__:main"
 galaxy-core = "galaxy_core.application.cli.commands:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["data/src"]
 
 [project.urls]
 Homepage = "https://github.com/kamasylvia/galaxy-core"
@@ -52,14 +51,7 @@ dev = [
   "ruff>=0.8.0",
   "mypy>=1.0.0",
   "black>=26.1.0",
-  "protoc-gen-connectrpc>=0.9.0,<0.10.0",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/galaxy_core"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.ruff]
 # Ruff 配置（与 uv 生态兼容）

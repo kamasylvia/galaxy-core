@@ -211,7 +211,7 @@ class TestCreateContainer:
     def test_create_container_no_injector_import(self):
         """container.py 不应导入 injector 框架."""
         with open(
-            "src/galaxy_core/di/container.py", encoding="utf-8"
+            "data/src/galaxy_core/di/container.py", encoding="utf-8"
         ) as f:
             content = f.read()
 

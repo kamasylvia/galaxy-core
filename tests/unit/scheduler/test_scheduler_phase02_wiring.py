@@ -185,7 +185,7 @@ class TestGetSectionBindingRegression:
         不应出现 `get_section =` 赋值(重绑)。
         """
         with open(
-            "src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
+            "data/src/galaxy_core/application/scheduler/scheduler.py", encoding="utf-8"
         ) as f:
             content = f.read()
         # 不应出现 get_section = 的赋值(重绑)— import 行是 'from ... import get_section'

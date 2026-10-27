@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 ALEMBIC_VERSIONS = Path("alembic/versions")
-SRC = Path("src/galaxy_core")
+SRC = Path("data/src/galaxy_core")
 
 MIGRATION_19 = "19_extend_last_sync_date_schema.py"
 

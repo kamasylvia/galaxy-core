@@ -43,7 +43,7 @@ sys.modules["galaxy_core.shared_kernel.utils.config_loader"] = mock_config_loade
 # which imports AmazingDataClient and triggers the SDK dependency chain
 spec = importlib.util.spec_from_file_location(
     "interval",
-    "src/galaxy_core/shared_kernel/enums/interval.py",
+    "data/src/galaxy_core/shared_kernel/enums/interval.py",
 )
 interval_module = importlib.util.module_from_spec(spec)
 sys.modules["galaxy_core.shared_kernel.enums.interval"] = interval_module
