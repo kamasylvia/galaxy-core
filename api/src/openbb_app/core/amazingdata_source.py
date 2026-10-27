@@ -154,3 +154,36 @@ def get_historical_data_via_openbb(
             }
         )
     return out
+
+
+_STATEMENT_ROUTES = {
+    "income": "income",
+    "balance_sheet": "balance",
+    "cash_flow": "cash",
+}
+
+
+def get_statements_via_openbb(
+    table: str, symbol: str, period: str, limit: int
+) -> list[dict[str, Any]]:
+    """Financial statements via OpenBB provider (single-exit channel).
+
+    输出列:period_ending / fiscal_period + A 股原列名 —— 与 SQL 路径
+    (_db.fetch_statements SELECT * 后经 _ALIAS rename)同形。
+    """
+    from openbb import obb
+
+    route_name = _STATEMENT_ROUTES[table]
+    processed = AmazingDataSource()._normalize_symbol(symbol)
+    logger.info("Fetching %s statements via OpenBB provider for %s", table, processed)
+    fn = getattr(obb.equity.fundamental, route_name)
+    res = fn(
+        symbol=processed,
+        provider="amazingdata",
+        period=period,
+        limit=limit,
+    )
+    # to_df() 按 standard schema 裁掉 provider 扩展字段(数值列),
+    # 逐条 model_dump 保全量字段。
+    return [r.model_dump() for r in res.results]
+

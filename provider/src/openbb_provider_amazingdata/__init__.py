@@ -9,6 +9,11 @@ from openbb_core.provider.abstract.provider import Provider
 from openbb_provider_amazingdata.models.equity_historical import (
     AmazingDataEquityHistoricalFetcher,
 )
+from openbb_provider_amazingdata.models.statements import (
+    AmazingDataBalanceSheetFetcher,
+    AmazingDataCashFlowFetcher,
+    AmazingDataIncomeStatementFetcher,
+)
 
 provider = Provider(
     name="amazingdata",
@@ -16,5 +21,8 @@ provider = Provider(
     website="https://github.com/kamasylvia/galaxy-core",
     fetcher_dict={
         "EquityHistorical": AmazingDataEquityHistoricalFetcher,
+        "IncomeStatement": AmazingDataIncomeStatementFetcher,
+        "BalanceSheet": AmazingDataBalanceSheetFetcher,
+        "CashFlowStatement": AmazingDataCashFlowFetcher,
     },
 )

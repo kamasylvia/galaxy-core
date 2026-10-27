@@ -52,7 +52,18 @@ _ALIAS = {
 
 
 def _fetch_statements(table: str, symbol_f: str, period: str, limit: int) -> pd.DataFrame:
-    df = _db.fetch_statements(table, symbol_f, period, limit)
+    # 单出口通道(2026-10-27):财务三表优先走 OpenBB provider(唯一转换层),
+    # 失败回落 SQL 直读。obb 通道输出列 period_ending/fiscal_period + A 股原列名,
+    # 与 SQL 路径经 _ALIAS 反向 rename 后的形态一致。
+    df = None
+    try:
+        from openbb_app.core.amazingdata_source import get_statements_via_openbb
+
+        df = pd.DataFrame(get_statements_via_openbb(table, symbol_f, period, limit))
+    except Exception as exc:  # noqa: BLE001 - fallback by design
+        logger.warning("OpenBB provider channel failed, fallback to SQL: %s", exc, exc_info=exc)
+    if df is None or df.empty:
+        df = _db.fetch_statements(table, symbol_f, period, limit)
     if df.empty:
         return df
     rename = {v: k for k, v in _ALIAS.items() if v in df.columns}
