@@ -436,3 +436,26 @@ class TestGetPeriodDates:
 
         assert start == date(2025, 1, 1)
         assert end == target_date
+
+
+def test_minute_security_types_scoping():
+    """分钟定稿只覆盖 ETF(2026-10-27 裁决):minute_security_types 独立生效. """
+    job = KlineSyncJob.__new__(KlineSyncJob)
+    job._config = {
+        "security_types": ["EXTRA_ETF", "EXTRA_STOCK_A", "EXTRA_INDEX_A"],
+        "minute_security_types": ["EXTRA_ETF"],
+    }
+    assert job._security_types_for(Interval.MIN1) == ["EXTRA_ETF"]
+    assert job._security_types_for(Interval.MIN5) == ["EXTRA_ETF"]
+    assert job._security_types_for(Interval.DAY) == [
+        "EXTRA_ETF",
+        "EXTRA_STOCK_A",
+        "EXTRA_INDEX_A",
+    ]
+
+
+def test_minute_security_types_fallback_to_full_list():
+    """未配置 minute_security_types 时回落全集(旧行为保持)."""
+    job = KlineSyncJob.__new__(KlineSyncJob)
+    job._config = {"security_types": ["EXTRA_STOCK_A"]}
+    assert job._security_types_for(Interval.MIN1) == ["EXTRA_STOCK_A"]

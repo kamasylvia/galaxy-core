@@ -191,6 +191,31 @@ class KlineSyncJob:
                 sync_type, period_id, "All retries exhausted"
             )
 
+    def _security_types_for(self, interval: Interval) -> list[str]:
+        """按周期取 security_types:分钟周期用 minute_security_types,其余用全集.
+
+        分钟若沿用 security_types 全集(EXTRA_ETF+EXTRA_STOCK_A+EXTRA_INDEX_A),
+        每日全量分钟查询会为股票/指数拉取数据,击穿 100G/年配额
+        (2026-10-27 裁决:分钟定稿只覆盖 ETF)。缺省回落全集保持旧行为。
+        """
+        security_type_strs = list(
+            self._config.get("security_types", ["EXTRA_ETF"])
+        )
+        if interval in (
+            Interval.MIN1,
+            Interval.MIN3,
+            Interval.MIN5,
+            Interval.MIN10,
+            Interval.MIN15,
+            Interval.MIN30,
+            Interval.MIN60,
+            Interval.MIN120,
+        ):
+            minute_types = self._config.get("minute_security_types")
+            if minute_types:
+                return list(minute_types)
+        return security_type_strs
+
     async def _do_sync(self, interval: Interval, sync_date: date) -> None:
         """Actual sync implementation using resolve_symbols + prepare_sync_args (D-08).
 
@@ -198,7 +223,8 @@ class KlineSyncJob:
         Long intervals use _get_period_dates to calculate period boundaries.
         """
         # Get security types from config (list)
-        security_type_strs = self._config.get("security_types", ["EXTRA_ETF"])
+        # 分钟周期独立收窄(2026-10-27 裁决:分钟定稿只覆盖 ETF,见 minute_security_types)
+        security_type_strs = self._security_types_for(interval)
         valid_types: list[str] = []
         for s in security_type_strs:
             try:
@@ -234,6 +260,21 @@ class KlineSyncJob:
             # Short period: start=None to rely on last_sync_date (D-08)
             start_str = None
             end_str = sync_date.strftime("%Y%m%d")
+            # 分钟周期显式回补窗(2026-10-27):kline.default_start_date(20130101)
+            # 对分钟是灾难——新 symbol 首启会拉全史分钟(1636 ETF ≈ 12 亿行,
+            # margin_detail 9/10 全史重拉同型前科)。显式 N 天窗与 rescan 对齐。
+            if interval in (
+                Interval.MIN1,
+                Interval.MIN3,
+                Interval.MIN5,
+                Interval.MIN10,
+                Interval.MIN15,
+                Interval.MIN30,
+                Interval.MIN60,
+                Interval.MIN120,
+            ):
+                backfill_days = int(self._config.get("minute_backfill_days", 8))
+                start_str = (sync_date - timedelta(days=backfill_days)).strftime("%Y%m%d")
 
         # Prepare sync args using shared preprocessing
         domain_interval, expanded_start, expanded_end = prepare_sync_args(

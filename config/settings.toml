@@ -66,7 +66,16 @@ max_retries = 3
 retry_delay_minutes = 60
 
 # 自动同步范围
-enabled_intervals = ["day", "week", "month", "season", "year"]
+# 分钟定稿覆盖启用(2026-10-27:此前缺分钟周期,run_minute 自 10/22 起一直空转,
+# 实时行 is_final 永不翻正;探针实证 SDK 分钟查询支持 ETF(min1 242/min5 48 根)。
+enabled_intervals = ["day", "week", "month", "season", "year", "min1", "min5"]
+# 分钟周期的 security_types 独立收窄(2026-10-27 裁决:分钟只定稿 ETF;
+# 日/周/月等长周期仍用 security_types 全集——若分钟沿用全集,
+# 股票/指数全量分钟查询会击穿 100G/年配额)。
+minute_security_types = ["EXTRA_ETF"]
+# 分钟回补窗(天):新 symbol 首启从 sync_date-N 起,防 default_start_date(20130101)
+# 触发全史分钟拉取(1636 ETF ≈ 12 亿行)。
+minute_backfill_days = 8
 security_types = ["EXTRA_ETF", "EXTRA_STOCK_A", "EXTRA_INDEX_A"]
 
 # 分钟线 T+1 定稿覆盖(2026-10-22 引入):盘中由 realtime_sub 实时写(is_final=false),

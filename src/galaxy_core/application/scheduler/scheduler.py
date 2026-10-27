@@ -547,10 +547,10 @@ class AutoSyncScheduler:
         """残留追扫:往回 N 天查 is_final=false,有残留即重跑该日覆盖(N 读 config)。"""
         from datetime import timedelta
 
-        minute_tables = (
-            "kline_min1", "kline_min3", "kline_min5", "kline_min10",
-            "kline_min15", "kline_min30", "kline_min60", "kline_min120",
-        )
+        # 2026-10-27 裁决:分钟只订/只定稿 ETF(min1/min5);残留判定同样只看
+        # ETF 行——股票 universe 已退订,其历史 is_final=false 行由 retention
+        # 滚动清理,不该日日触发无效重跑。
+        minute_tables = ("kline_min1", "kline_min5")
         rescan_days = int(self._config.get("minute_rescan_days", 8))
         async with self._db_manager.session() as session:
             from sqlalchemy import text as _text
@@ -572,7 +572,8 @@ class AutoSyncScheduler:
                         r = await session.execute(
                             _text(
                                 f"SELECT count(*) FROM {table} "
-                                "WHERE trade_time::date = :d AND is_final = false"
+                                "WHERE trade_time::date = :d AND is_final = false "
+                                "AND security_type IN ('SH_ETF', 'SZ_ETF')"
                             ),
                             {"d": day},
                         )
@@ -588,9 +589,9 @@ class AutoSyncScheduler:
                         logger.error(f"残留追扫 {day} 重跑失败: {e}", exc_info=True)
 
     async def _reset_minute_marks(self, day: date) -> None:
-        """重置某日 8 分钟表的 success 标记 → pending,允许重跑覆盖。"""
+        """重置分钟表的 success 标记 → pending,允许重跑覆盖(裁决后仅 min1/min5)."""
         period_id = day.strftime("%Y%m%d")
-        for iv in ("min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120"):
+        for iv in ("min1", "min5"):
             try:
                 async with self._db_manager.session() as session:
                     from sqlalchemy import update as _update
