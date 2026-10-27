@@ -22,9 +22,9 @@ _STOCK_QUOTE_CACHE_TTL = 60  # Cache for 60 seconds
 def invalidate_stock_quote_cache(symbol: Optional[str] = None) -> None:
     """
     Invalidate stock quote cache.
-    
+
     Args:
-        symbol: If provided, invalidate only this symbol's cache. 
+        symbol: If provided, invalidate only this symbol's cache.
                 If None, invalidate the entire cache.
     """
     global _stock_quote_cache
@@ -177,10 +177,7 @@ def get_stock_quote(symbol: str) -> dict:
         }
 
         # Cache the result
-        _stock_quote_cache[symbol] = {
-            "data": result,
-            "timestamp": now
-        }
+        _stock_quote_cache[symbol] = {"data": result, "timestamp": now}
 
         logger.info(f"Fetched and cached amazingdata quote for {symbol}")
         return result
@@ -198,7 +195,7 @@ def get_stock_quote(symbol: str) -> dict:
 
 
 def get_symbols(exchange: str = "") -> List[dict]:
-    """Available tickers, amazingdata only (local stock_basic)."""
+    """Available tickers via OpenBB provider, fallback to local stock_basic."""
     import asyncio
     import concurrent.futures
 
@@ -220,6 +217,15 @@ def get_symbols(exchange: str = "") -> List[dict]:
             await conn.close()
 
     def _run() -> list[dict]:
+        # 单出口通道:优先 OpenBB provider 取 rows(列同 SQL),失败回落
+        try:
+            from openbb_app.core.amazingdata_source import get_symbols_via_openbb
+
+            rows = get_symbols_via_openbb()
+            if rows:
+                return rows
+        except Exception:
+            pass
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -275,18 +281,30 @@ def get_news(symbol: str, limit: int = 10) -> pd.DataFrame:
     try:
         cb = f"jQuery{int(time.time() * 1000)}"
         inner = {
-            "uid": "", "keyword": code, "type": ["cmsArticleWebOld"],
-            "client": "web", "clientType": "web", "clientVersion": "curr",
-            "param": {"cmsArticleWebOld": {
-                "searchScope": "default", "sort": "default",
-                "pageIndex": 1, "pageSize": 50,
-                "preTag": "<em>", "postTag": "</em>",
-            }},
+            "uid": "",
+            "keyword": code,
+            "type": ["cmsArticleWebOld"],
+            "client": "web",
+            "clientType": "web",
+            "clientVersion": "curr",
+            "param": {
+                "cmsArticleWebOld": {
+                    "searchScope": "default",
+                    "sort": "default",
+                    "pageIndex": 1,
+                    "pageSize": 50,
+                    "preTag": "<em>",
+                    "postTag": "</em>",
+                }
+            },
         }
         r = requests.get(
             "https://search-api-web.eastmoney.com/search/jsonp",
-            params={"cb": cb, "param": json.dumps(inner, ensure_ascii=False),
-                    "_": str(int(time.time() * 1000))},
+            params={
+                "cb": cb,
+                "param": json.dumps(inner, ensure_ascii=False),
+                "_": str(int(time.time() * 1000)),
+            },
             headers={
                 "Referer": f"https://so.eastmoney.com/news/s?keyword={code}",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -296,7 +314,7 @@ def get_news(symbol: str, limit: int = 10) -> pd.DataFrame:
             timeout=10,
         )
         text = r.text.strip()
-        payload = text[len(cb) + 1:-1] if text.startswith(cb) else text
+        payload = text[len(cb) + 1 : -1] if text.startswith(cb) else text
         data = json.loads(payload)
         rows = (data.get("result") or {}).get("cmsArticleWebOld") or []
         if not rows:
@@ -317,13 +335,15 @@ def get_news(symbol: str, limit: int = 10) -> pd.DataFrame:
             content = re.sub(r"</?em>", "", it.get("content") or "")
             if not any(n and n in title for n in names if n):
                 continue
-            out.append({
-                "title": title,
-                "published": it.get("date") or "",
-                "summary": content[:300],
-                "source": it.get("mediaName") or "东方财富",
-                "url": f"http://finance.eastmoney.com/a/{it.get('code', '')}.html",
-            })
+            out.append(
+                {
+                    "title": title,
+                    "published": it.get("date") or "",
+                    "summary": content[:300],
+                    "source": it.get("mediaName") or "东方财富",
+                    "url": f"http://finance.eastmoney.com/a/{it.get('code', '')}.html",
+                }
+            )
             if len(out) >= limit:
                 break
         return pd.DataFrame(out) if out else empty
@@ -351,14 +371,21 @@ def get_info(symbol: str) -> pd.DataFrame:
     async def _fetch() -> list[dict]:
         conn = await asyncpg.connect(**_connect_kwargs())
         try:
-            rows = await conn.fetch(
-                "SELECT * FROM stock_basic WHERE symbol = $1 LIMIT 1", symbol_f
-            )
+            rows = await conn.fetch("SELECT * FROM stock_basic WHERE symbol = $1 LIMIT 1", symbol_f)
             return [dict(r) for r in rows]
         finally:
             await conn.close()
 
     def _run() -> list[dict]:
+        # 单出口通道:优先 OpenBB provider 取 rows(列同 SQL),失败回落
+        try:
+            from openbb_app.core.amazingdata_source import get_symbols_via_openbb
+
+            rows = get_symbols_via_openbb()
+            if rows:
+                return rows
+        except Exception:
+            pass
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

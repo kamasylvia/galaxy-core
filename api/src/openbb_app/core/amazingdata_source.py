@@ -187,3 +187,63 @@ def get_statements_via_openbb(
     # 逐条 model_dump 保全量字段。
     return [r.model_dump() for r in res.results]
 
+
+def get_quotes_via_openbb(tickers_csv: str) -> list[dict[str, Any]]:
+    """Quotes via OpenBB provider(输出与 get_quote 的中文键同形)."""
+    from openbb import obb
+
+    symbols = [t.strip() for t in tickers_csv.split(",") if t.strip()]
+    logger.info("Fetching quotes via OpenBB provider for %s", symbols)
+    res = obb.equity.price.quote(symbol=",".join(symbols), provider="amazingdata")
+    out: list[dict[str, Any]] = []
+    for raw, r in zip(symbols, res.results):
+        d = r.model_dump()
+        name = d.get("comp_name") or d.get("security_name") or d.get("symbol")
+        out.append(
+            {
+                "代码": raw,
+                "名称": name,
+                "现价": d.get("last_price"),
+                "52周最低": d.get("week52_low"),
+                "52周最高": d.get("week52_high"),
+                "成交量": d.get("last_volume"),
+                "股息率(TTM)": None,
+                "股息(TTM)": None,
+            }
+        )
+    return out
+
+
+def get_profile_via_openbb(symbol: str) -> dict[str, Any]:
+    """Profile via OpenBB provider(输出 = stock_basic 原列 dict)."""
+    from openbb import obb
+
+    processed = AmazingDataSource()._normalize_symbol(symbol)
+    logger.info("Fetching profile via OpenBB provider for %s", processed)
+    res = obb.equity.profile(symbol=processed, provider="amazingdata")
+    d = res.results.model_dump()
+    return {
+        "symbol": d.get("symbol"),
+        "security_name": d.get("security_name"),
+        "comp_name": d.get("comp_name"),
+        "listplate_name": d.get("listplate_name"),
+        "list_date": d.get("list_date"),
+        "delist_date": d.get("delist_date"),
+        "is_listed": d.get("is_listed"),
+    }
+
+
+def get_symbols_via_openbb() -> list[dict[str, Any]]:
+    """Ticker list via OpenBB provider(列: symbol/security_name/comp_name)."""
+    from openbb import obb
+
+    logger.info("Fetching symbols via OpenBB provider")
+    res = obb.equity.search(query="*", provider="amazingdata")
+    return [
+        {
+            "symbol": r.symbol,
+            "security_name": getattr(r, "security_name", None),
+            "comp_name": getattr(r, "comp_name", None),
+        }
+        for r in res.results
+    ]

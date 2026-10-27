@@ -9,6 +9,11 @@ from openbb_core.provider.abstract.provider import Provider
 from openbb_provider_amazingdata.models.equity_historical import (
     AmazingDataEquityHistoricalFetcher,
 )
+from openbb_provider_amazingdata.models.equity_meta import (
+    AmazingDataEquityInfoFetcher,
+    AmazingDataEquityQuoteFetcher,
+    AmazingDataEquitySearchFetcher,
+)
 from openbb_provider_amazingdata.models.statements import (
     AmazingDataBalanceSheetFetcher,
     AmazingDataCashFlowFetcher,
@@ -24,5 +29,8 @@ provider = Provider(
         "IncomeStatement": AmazingDataIncomeStatementFetcher,
         "BalanceSheet": AmazingDataBalanceSheetFetcher,
         "CashFlowStatement": AmazingDataCashFlowFetcher,
+        "EquityQuote": AmazingDataEquityQuoteFetcher,
+        "EquityInfo": AmazingDataEquityInfoFetcher,
+        "EquitySearch": AmazingDataEquitySearchFetcher,
     },
 )

@@ -114,10 +114,18 @@ def get_info(ticker: str) -> pd.Series:
     _, symbol_f, market = normalize_symbol(ticker)
     if market not in _AMAZINGDATA_MARKETS:
         raise ValueError(f"pure-amazingdata mode: no HK/overseas data for {ticker}")
-    df = _db.fetch_profile(symbol_f)
-    if df.empty:
-        raise ValueError(f"amazingdata has no profile for {ticker}")
-    row = df.iloc[0].to_dict()
+    row: dict | None = None
+    try:
+        from openbb_app.core.amazingdata_source import get_profile_via_openbb
+
+        row = get_profile_via_openbb(symbol_f)
+    except Exception as exc:  # noqa: BLE001 - fallback by design
+        logger.warning("OpenBB profile channel failed, fallback to SQL: %s", exc, exc_info=exc)
+    if not row or not row.get("symbol"):
+        df = _db.fetch_profile(symbol_f)
+        if df.empty:
+            raise ValueError(f"amazingdata has no profile for {ticker}")
+        row = df.iloc[0].to_dict()
     out = {cn: row.get(en) for cn, en in _PROFILE_FIELDS.items() if cn == "symbol" or en in row}
     out["symbol"] = row.get("symbol", symbol_f)
     return pd.Series(out, name=row.get("security_name") or symbol_f)
@@ -154,11 +162,20 @@ def get_historical_prices(
 
 
 def get_quote(tickers: str) -> list[dict]:
-    """Multi-ticker quote via local daily bars."""
+    """Multi-ticker quote via OpenBB provider, fallback to local daily bars."""
+    from openbb_app.core.amazingdata_source import AmazingDataSource
+
+    try:
+        from openbb_app.core.amazingdata_source import get_quotes_via_openbb
+
+        quotes = get_quotes_via_openbb(tickers)
+        if quotes:
+            return quotes
+    except Exception as exc:  # noqa: BLE001 - fallback by design
+        logger.warning("OpenBB quote channel failed, fallback to SQL: %s", exc, exc_info=exc)
+
     from datetime import date as _date
     from datetime import timedelta as _td
-
-    from openbb_app.core.amazingdata_source import AmazingDataSource
 
     src = AmazingDataSource()
     out: list[dict] = []
