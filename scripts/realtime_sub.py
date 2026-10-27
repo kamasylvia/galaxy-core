@@ -9,14 +9,16 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("realtime_sub")
 
-PERIODS = ["min1", "min5"]  # 2026-10-27 裁决:只订 min1/min5(quota)
-
 
 def _cfg(key: str, default):
     """读 config/settings.toml [scheduler] 节(唯一时间来源)。"""
     from galaxy_core.shared_kernel.utils.config_loader import get_config
 
     return get_config("scheduler", key, default)
+
+
+# 订阅周期配置化(公开发布用户可配,settings.toml [scheduler] realtime_sub_periods)
+PERIODS = list(_cfg("realtime_sub_periods", ["min1", "min5"]))
 
 
 def _handle_signal(signum, frame):
@@ -30,12 +32,10 @@ signal.signal(signal.SIGINT, _handle_signal)
 
 
 def get_universe() -> list[str]:
-    """沪深 ETF 全集(51x/56x/58x SH + 15x SZ,stock_basic 现表,~1636 只).
+    """按配置前缀选 universe(settings.toml [scheduler] realtime_sub_universe_prefixes).
 
-    2026-10-27 用户裁决:realtime 只订 ETF(原「纯 A 股」universe 的 ETF 过滤
-    不全——56x/588x SH ETF 未被 159/511/512/513 前缀滤净,混入 7278 只;
-    配额 100G/年下整体改为 ETF-only + min1/min5 + 14:00-15:10 窗口,
-    年化流量降两个数量级)。
+    默认沪深 ETF 全集(51x/56x/58x SH + 15x SZ,~1636 只;2026-10-27 裁决)。
+    公开发布后用户可改前缀订任意品种段(如 60%/00%/30%/68% = A 股)。
     """
     import asyncpg
 
@@ -50,10 +50,10 @@ def get_universe() -> list[str]:
             password=get_env("DB_PASSWORD"),
         )
         try:
+            prefixes = list(_cfg("realtime_sub_universe_prefixes", ["51%", "56%", "58%", "15%"]))
             rows = await conn.fetch(
-                "SELECT symbol FROM stock_basic"
-                " WHERE symbol LIKE '51%' OR symbol LIKE '56%'"
-                " OR symbol LIKE '58%' OR symbol LIKE '15%'"
+                "SELECT symbol FROM stock_basic WHERE symbol LIKE ANY($1)",
+                prefixes,
             )
             return [r["symbol"] for r in rows]
         finally:
@@ -62,13 +62,22 @@ def get_universe() -> list[str]:
     return asyncio.run(_fetch())
 
 
-def _etf_security_type(symbol: str):
-    """按交易所映射 ETF security_type(与日线链 SH_ETF/SZ_ETF 分类一致)."""
-    from galaxy_core.domain.value_objects import SecurityType
+def security_type_for(symbol: str):
+    """通用 security_type 推断(universe 配置化后任意品种段都正确标注).
 
-    if symbol.endswith(".SH"):
-        return SecurityType.SH_ETF
-    return SecurityType.SZ_ETF
+    走项目统一的 infer_security_type(前缀→SH_ETF/SZ_ETF/SH_A/SZ_A/...),
+    推断失败回落 EXTRA_STOCK_A。
+    """
+    from galaxy_core.domain.value_objects import SecurityType
+    from galaxy_core.shared_kernel.utils.symbol_type_inference import (
+        infer_security_type,
+    )
+
+    inferred = infer_security_type(symbol)
+    try:
+        return SecurityType(inferred) if inferred else SecurityType.EXTRA_STOCK_A
+    except ValueError:
+        return SecurityType.EXTRA_STOCK_A
 
 
 def is_trading_day() -> bool:
@@ -157,7 +166,7 @@ async def _upsert_batch(period: str, bars: list) -> int:
                 close=d.get("close"),
                 volume=d.get("volume"),
                 amount=d.get("amount"),
-                security_type=_etf_security_type(code),
+                security_type=security_type_for(code),
                 is_final=False,
             )
         )
@@ -257,7 +266,16 @@ def main() -> int:
     )
     sub_data = ad.SubscribeData()
 
+    periods = []
     for period in PERIODS:
+        if not hasattr(ad.constant.Period, period):
+            log.warning(f"无效订阅周期 {period}（SDK Period 无此名),跳过")
+            continue
+        periods.append(period)
+    if not periods:
+        log.error("无有效订阅周期,退出")
+        return 1
+    for period in periods:
         period_value = getattr(ad.constant.Period, period).value
 
         def make_handler(p):

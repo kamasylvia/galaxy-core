@@ -89,6 +89,10 @@ minute_retention_days = 22
 # 实时订阅(2026-10-22 引入):AM 限并发,订阅只在交易时段跑。
 # scheduler 主进程按 start/end spawn/kill 子进程,不用 systemd timer。
 # 时间语义:北京时间 HH:MM(与 scheduler 其他触发器一致,经 _now_cst 解释)。
+# 订阅 universe:股票代码前缀 LIKE 列表(公开发布用户可配;默认沪深 ETF 全集)
+realtime_sub_universe_prefixes = ["51%", "56%", "58%", "15%"]
+# 订阅周期(SDK Period 名:min1/min3/min5/min10/min15/min30/min60/min120)
+realtime_sub_periods = ["min1", "min5"]
 realtime_sub_start = "14:00"
 realtime_sub_end = "15:10"
 # 攒批落库间隔(秒):OnKline 回调攒 N 秒批量 upsert,防 PG 被打爆。

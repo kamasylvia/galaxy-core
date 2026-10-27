@@ -3,9 +3,11 @@
 背景(2026-10-27,见 .work/TODO.md):
 1. SDK pydantic Kline 时间字段是 ``kline_time``(非 trade_time),缺失回退会把
    100% 的实时 bar 丢弃;
-2. 用户裁决:realtime 只订沪深 ETF(51x/56x/58x SH + 15x SZ)、窗口 14:00-15:10、
-   周期只订 min1/min5(quota 100G/年);ETF 的 security_type 按交易所映射
-   SH_ETF/SZ_ETF(与日线链分类一致)。
+2. 订阅三要素全部配置化(公开发布用户可配,settings.toml [scheduler]):
+   universe=realtime_sub_universe_prefixes(默认沪深 ETF 前缀)、
+   周期=realtime_sub_periods(默认 min1/min5)、窗口=realtime_sub_start/end
+   (默认 14:00-15:10);security_type 走 infer_security_type 通用推断,
+   任意 universe 配置都正确标注。
 """
 
 import importlib.util
@@ -33,26 +35,46 @@ def test_kline_time_fallback_present():
     )
 
 
-def test_periods_etf_ruling():
+def test_periods_from_config():
+    """周期必须配置化:脚本读 realtime_sub_periods,默认 min1/min5."""
     src = _source()
-    assert 'PERIODS = ["min1", "min5"]' in src, "周期应为 min1/min5(2026-10-27 裁决)"
-
-
-def test_universe_etf_only():
-    src = _source()
-    assert "symbol LIKE '51%'" in src and "symbol LIKE '15%'" in src, (
-        "universe 应为沪深 ETF-only(51x/56x/58x SH + 15x SZ,2026-10-27 裁决)"
+    assert 'list(_cfg("realtime_sub_periods"' in src, "PERIODS 必须来自配置,不得写死"
+    assert 'realtime_sub_periods = ["min1", "min5"]' in _settings(), (
+        "settings.toml 缺 realtime_sub_periods 默认值"
     )
-    assert "NOT LIKE" not in src, "旧的「排除法」股票过滤已废弃,不得回潮(过滤不全混入 ETF)"
 
 
-def test_etf_security_type_mapping():
+def test_universe_from_config():
+    """universe 必须配置化:脚本读 realtime_sub_universe_prefixes(集合选择,非排除法)."""
+    src = _source()
+    assert '_cfg("realtime_sub_universe_prefixes"' in src, "universe 必须来自配置,不得写死"
+    assert "LIKE ANY($1)" in src, "前缀过滤应走参数化 LIKE ANY"
+    assert 'realtime_sub_universe_prefixes = ["51%", "56%", "58%", "15%"]' in _settings(), (
+        "settings.toml 缺 universe 前缀默认值(沪深 ETF 全集)"
+    )
+
+
+def test_security_type_via_infer():
+    """security_type 走 infer_security_type 通用推断(任意 universe 配置自适应)."""
+    src = _source()
+    assert "infer_security_type" in src, "security_type 必须走 infer_security_type"
+    assert "_etf_security_type" not in src, "写死的 ETF 映射应已删除"
+
     from galaxy_core.domain.value_objects import SecurityType
+    from galaxy_core.shared_kernel.utils.symbol_type_inference import (
+        infer_security_type,
+    )
 
     mod = _load_module()
-    assert mod._etf_security_type("510300.SH") is SecurityType.SH_ETF
-    assert mod._etf_security_type("563330.SH") is SecurityType.SH_ETF
-    assert mod._etf_security_type("159915.SZ") is SecurityType.SZ_ETF
+    assert mod.security_type_for("510300.SH") is SecurityType.SH_ETF
+    assert mod.security_type_for("159915.SZ") is SecurityType.SZ_ETF
+    assert mod.security_type_for("600000.SH") is SecurityType.SH_A
+
+
+def _settings() -> str:
+    return (Path(__file__).resolve().parents[3] / "config" / "settings.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_upsert_batch_maps_kline_time(monkeypatch):
