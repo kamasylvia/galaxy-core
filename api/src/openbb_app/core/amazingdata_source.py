@@ -35,9 +35,7 @@ _INTERVAL_TABLE = {
 }
 
 
-async def _fetch_bars(
-    symbol: str, start_date: str, end_date: str, interval: str
-) -> list[dict]:
+async def _fetch_bars(symbol: str, start_date: str, end_date: str, interval: str) -> list[dict]:
     import asyncpg
     from datetime import date as _date
 
@@ -114,3 +112,45 @@ class AmazingDataSource(DataSource):
                 }
             )
         return out
+
+
+def get_historical_data_via_openbb(
+    symbol: str, start_date: str, end_date: str
+) -> list[dict[str, Any]]:
+    """Day bars via OpenBB Platform (provider=amazingdata) - single-exit channel.
+
+    单出口首切(2026-10-27):day 周期优先经 OpenBB provider 读库
+    (obb_equity_historical 视图),week/month 视图未覆盖仍走 SQL 直读;
+    调用方负责 fallback(SQL)。
+    """
+    import pandas as pd  # noqa: F401  (obb to_df 依赖)
+
+    from openbb import obb
+
+    processed = AmazingDataSource()._normalize_symbol(symbol)
+    logger.info("Fetching day bars via OpenBB provider for %s", processed)
+    res = obb.equity.price.historical(
+        symbol=processed,
+        provider="amazingdata",
+        start_date=start_date,
+        end_date=end_date,
+    )
+    df = res.to_df()
+    if "date" not in df.columns and df.index.name == "date":
+        df = df.reset_index()
+    out: list[dict[str, Any]] = []
+    for row in df.to_dict(orient="records"):
+        d = row.get("date")
+        out.append(
+            {
+                "date": d.isoformat() if hasattr(d, "isoformat") else str(d),
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "volume": row.get("volume"),
+                "amount": row.get("amount"),
+                "interval": "1d",
+            }
+        )
+    return out

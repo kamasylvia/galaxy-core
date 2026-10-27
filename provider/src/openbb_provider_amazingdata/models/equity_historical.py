@@ -38,6 +38,11 @@ class AmazingDataEquityHistoricalQueryParams(EquityHistoricalQueryParams):
 class AmazingDataEquityHistoricalData(EquityHistoricalData):
     """AmazingData Equity Historical data (column names already aligned in-view)."""
 
+    amount: float | None = Field(
+        default=None,
+        description="Turnover in CNY (single-exit compatibility with the SQL path).",
+    )
+
 
 async def _fetch_rows(
     conn: asyncpg.Connection,
@@ -48,7 +53,7 @@ async def _fetch_rows(
     """Single-symbol range read from the view."""
     rows = await conn.fetch(
         """
-        SELECT symbol, date, open, high, low, close, volume, vwap
+        SELECT symbol, date, open, high, low, close, volume, amount, vwap
         FROM obb_equity_historical
         WHERE symbol = $1 AND date >= $2 AND date <= $3
         ORDER BY date

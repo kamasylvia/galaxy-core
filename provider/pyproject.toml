@@ -5,7 +5,7 @@ description = "DB-backed A-share provider for OpenBB Platform (AmazingData inges
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "openbb-core>=2.0",
+    "openbb-core>=1.6.8",
     "asyncpg>=0.29.0",
     "python-dateutil>=2.8",
 ]

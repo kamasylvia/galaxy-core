@@ -1,5 +1,9 @@
 """A-share statements/profile from local TimescaleDB (pure AmazingData)."""
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import pandas as pd
 from mysharelib.tools import normalize_symbol
 
@@ -118,9 +122,19 @@ def get_historical_prices(
     if market not in _AMAZINGDATA_MARKETS:
         raise ValueError(f"pure-amazingdata mode: no HK/overseas data for {ticker}")
     table_interval = {"day": "1d", "week": "1w", "month": "1m"}.get(interval, "1d")
-    bars = AmazingDataSource().get_historical_data(
-        ticker, start_date, end_date, table_interval
-    )
+    bars = None
+    if table_interval == "1d":
+        # 单出口首切(2026-10-27):day 优先走 OpenBB provider(唯一转换层),
+        # 失败回落 SQL 直读(week/month 视图未覆盖,恒走 SQL)。
+        try:
+            from openbb_app.core.amazingdata_source import get_historical_data_via_openbb
+
+            bars = get_historical_data_via_openbb(ticker, start_date, end_date)
+        except Exception as exc:  # noqa: BLE001 - fallback by design
+            logger.warning("OpenBB provider channel failed, fallback to SQL: %s", exc, exc_info=exc)
+            bars = None
+    if bars is None:
+        bars = AmazingDataSource().get_historical_data(ticker, start_date, end_date, table_interval)
     df = pd.DataFrame(bars)
     if df.empty:
         return df
@@ -143,9 +157,7 @@ def get_quote(tickers: str) -> list[dict]:
         try:
             end = _date.today()
             start = end - _td(days=400)
-            bars = src.get_historical_data(
-                symbol, start.isoformat(), end.isoformat(), "1d"
-            )
+            bars = src.get_historical_data(symbol, start.isoformat(), end.isoformat(), "1d")
             if not bars:
                 raise ValueError(f"amazingdata has no bars for {symbol}")
             closes = [b["close"] for b in bars if b.get("close") is not None]
