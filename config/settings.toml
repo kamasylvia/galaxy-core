@@ -50,7 +50,7 @@ enable_separate_log_files = true
 log_file_pattern = "./logs/{date}/{time}.log"
 
 [scheduler]
-# 白天零 SDK 调用:realtime_sub 独占 TGW(9:00-15:30)。
+# realtime_sub 窗口 14:00-15:10(2026-10-27 裁决:ETF-only + min1/min5,尾盘段);白天其余时段零 SDK。
 # 全量改走 0:10 独立 job(minute_cover_*),残留追扫往回 minute_rescan_days 天。
 
 # 交易日历同步：每年 12 月 20 日 ~ 31 日检查并同步下一年日历
@@ -80,8 +80,8 @@ minute_retention_days = 22
 # 实时订阅(2026-10-22 引入):AM 限并发,订阅只在交易时段跑。
 # scheduler 主进程按 start/end spawn/kill 子进程,不用 systemd timer。
 # 时间语义:北京时间 HH:MM(与 scheduler 其他触发器一致,经 _now_cst 解释)。
-realtime_sub_start = "09:00"
-realtime_sub_end = "15:30"
+realtime_sub_start = "14:00"
+realtime_sub_end = "15:10"
 # 攒批落库间隔(秒):OnKline 回调攒 N 秒批量 upsert,防 PG 被打爆。
 realtime_sub_flush_seconds = 10
 # 残留追扫往回天数(T+2 才发布场景):追扫 is_final=false,有残留即重跑覆盖。

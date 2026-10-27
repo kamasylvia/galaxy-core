@@ -1,9 +1,11 @@
 """realtime_sub.py 源码级回归测试.
 
-背景(2026-10-27 实测定因,见 .work/TODO.md):SDK pydantic Kline 的时间字段
-是 ``kline_time``,而 ``_upsert_batch`` 此前只取 ``trade_time`` → 「无时间戳」
-守卫把 100% 的 bar 丢弃,flush 日志恒「0 bars」、实时分钟线落库全灭。
-推送通道本身一直正常(含互踢修复后的常规到达)。
+背景(2026-10-27,见 .work/TODO.md):
+1. SDK pydantic Kline 时间字段是 ``kline_time``(非 trade_time),缺失回退会把
+   100% 的实时 bar 丢弃;
+2. 用户裁决:realtime 只订沪深 ETF(51x/56x/58x SH + 15x SZ)、窗口 14:00-15:10、
+   周期只订 min1/min5(quota 100G/年);ETF 的 security_type 按交易所映射
+   SH_ETF/SZ_ETF(与日线链分类一致)。
 """
 
 import importlib.util
@@ -16,6 +18,13 @@ def _source() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
+def _load_module():
+    spec = importlib.util.spec_from_file_location("realtime_sub_under_test", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_kline_time_fallback_present():
     src = _source()
     assert 'd.get("kline_time")' in src, (
@@ -24,22 +33,34 @@ def test_kline_time_fallback_present():
     )
 
 
-def test_kline_periods_unchanged():
+def test_periods_etf_ruling():
     src = _source()
-    assert 'PERIODS = ["min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120"]' in src
+    assert 'PERIODS = ["min1", "min5"]' in src, "周期应为 min1/min5(2026-10-27 裁决)"
 
 
-def _load_module():
-    spec = importlib.util.spec_from_file_location("realtime_sub_under_test", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def test_universe_etf_only():
+    src = _source()
+    assert "symbol LIKE '51%'" in src and "symbol LIKE '15%'" in src, (
+        "universe 应为沪深 ETF-only(51x/56x/58x SH + 15x SZ,2026-10-27 裁决)"
+    )
+    assert "NOT LIKE" not in src, "旧的「排除法」股票过滤已废弃,不得回潮(过滤不全混入 ETF)"
+
+
+def test_etf_security_type_mapping():
+    from galaxy_core.domain.value_objects import SecurityType
+
+    mod = _load_module()
+    assert mod._etf_security_type("510300.SH") is SecurityType.SH_ETF
+    assert mod._etf_security_type("563330.SH") is SecurityType.SH_ETF
+    assert mod._etf_security_type("159915.SZ") is SecurityType.SZ_ETF
 
 
 def test_upsert_batch_maps_kline_time(monkeypatch):
     """pydantic 形态 bar(带 kline_time)应被转换为 KlineBar 而非丢弃。"""
     from datetime import datetime
     from types import SimpleNamespace
+
+    from galaxy_core.domain.value_objects import SecurityType
 
     mod = _load_module()
     captured = {}
@@ -69,14 +90,14 @@ def test_upsert_batch_maps_kline_time(monkeypatch):
 
     bar = SimpleNamespace(
         model_dump=lambda: {
-            "code": "600000.SH",
-            "kline_time": datetime(2026, 10, 27, 10, 32),
-            "open": 9.6,
-            "high": 9.7,
-            "low": 9.5,
-            "close": 9.6,
-            "volume": 1000,
-            "amount": 9600.0,
+            "code": "510300.SH",
+            "kline_time": datetime(2026, 10, 27, 14, 1),
+            "open": 4.1,
+            "high": 4.2,
+            "low": 4.0,
+            "close": 4.1,
+            "volume": 100000,
+            "amount": 410000.0,
         }
     )
 
@@ -86,9 +107,10 @@ def test_upsert_batch_maps_kline_time(monkeypatch):
 
     assert n == 1
     kb = captured["bars"][0]
-    assert kb.symbol == "600000.SH"
-    assert kb.trade_time == datetime(2026, 10, 27, 10, 32)
+    assert kb.symbol == "510300.SH"
+    assert kb.trade_time == datetime(2026, 10, 27, 14, 1)
     assert kb.is_final is False
+    assert kb.security_type is SecurityType.SH_ETF
 
 
 def test_upsert_batch_drops_bars_without_any_time(monkeypatch):
@@ -121,7 +143,7 @@ def test_upsert_batch_drops_bars_without_any_time(monkeypatch):
     monkeypatch.setattr(conn_mod.AsyncDatabaseManager, "__new__", lambda cls: StubMgr())
     monkeypatch.setattr(adapter_mod, "KlineStoreAdapter", StubAdapter)
 
-    bar = SimpleNamespace(model_dump=lambda: {"code": "600000.SH", "open": 9.6, "close": 9.6})
+    bar = SimpleNamespace(model_dump=lambda: {"code": "510300.SH", "open": 4.1, "close": 4.1})
 
     import asyncio
 

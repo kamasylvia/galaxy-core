@@ -9,7 +9,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("realtime_sub")
 
-PERIODS = ["min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120"]
+PERIODS = ["min1", "min5"]  # 2026-10-27 裁决:只订 min1/min5(quota)
 
 
 def _cfg(key: str, default):
@@ -30,7 +30,13 @@ signal.signal(signal.SIGINT, _handle_signal)
 
 
 def get_universe() -> list[str]:
-    """7221 只(A 股+北交,去 ETF/LOF)+ 指数,用 stock_basic 现表."""
+    """沪深 ETF 全集(51x/56x/58x SH + 15x SZ,stock_basic 现表,~1636 只).
+
+    2026-10-27 用户裁决:realtime 只订 ETF(原「纯 A 股」universe 的 ETF 过滤
+    不全——56x/588x SH ETF 未被 159/511/512/513 前缀滤净,混入 7278 只;
+    配额 100G/年下整体改为 ETF-only + min1/min5 + 14:00-15:10 窗口,
+    年化流量降两个数量级)。
+    """
     import asyncpg
 
     from galaxy_core.shared_kernel.utils.infisical_config import get_env
@@ -46,14 +52,23 @@ def get_universe() -> list[str]:
         try:
             rows = await conn.fetch(
                 "SELECT symbol FROM stock_basic"
-                " WHERE symbol NOT LIKE '159%' AND symbol NOT LIKE '511%'"
-                " AND symbol NOT LIKE '512%' AND symbol NOT LIKE '513%'"
+                " WHERE symbol LIKE '51%' OR symbol LIKE '56%'"
+                " OR symbol LIKE '58%' OR symbol LIKE '15%'"
             )
             return [r["symbol"] for r in rows]
         finally:
             await conn.close()
 
     return asyncio.run(_fetch())
+
+
+def _etf_security_type(symbol: str):
+    """按交易所映射 ETF security_type(与日线链 SH_ETF/SZ_ETF 分类一致)."""
+    from galaxy_core.domain.value_objects import SecurityType
+
+    if symbol.endswith(".SH"):
+        return SecurityType.SH_ETF
+    return SecurityType.SZ_ETF
 
 
 def is_trading_day() -> bool:
@@ -142,7 +157,7 @@ async def _upsert_batch(period: str, bars: list) -> int:
                 close=d.get("close"),
                 volume=d.get("volume"),
                 amount=d.get("amount"),
-                security_type=SecurityType.EXTRA_STOCK_A,
+                security_type=_etf_security_type(code),
                 is_final=False,
             )
         )
