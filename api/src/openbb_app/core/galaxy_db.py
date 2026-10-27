@@ -92,21 +92,13 @@ def fetch_industry_valuation(
     index_code: str | None, start_date: str, end_date: str, limit: int
 ) -> pd.DataFrame:
     """Industry index daily bars with PB/PE."""
-    if index_code:
-        rows = _run(_fetch(
-            "SELECT trade_date, index_code, open, high, low, close, volume, amount,"
-            " pb, pe FROM industry_daily WHERE index_code = $1"
-            " AND trade_date >= $2 AND trade_date <= $3"
-            " ORDER BY trade_date DESC LIMIT $4",
-            index_code, _to_date(start_date), _to_date(end_date), limit,
-        ))
-    else:
-        rows = _run(_fetch(
-            "SELECT trade_date, index_code, close, pb, pe FROM industry_daily"
-            " WHERE trade_date >= $1 AND trade_date <= $2"
-            " ORDER BY trade_date DESC, index_code LIMIT $3",
-            _to_date(start_date), _to_date(end_date), limit,
-        ))
+    from openbb_provider_amazingdata import queries as _q
+
+    rows = _q.sync(
+        _q.industry_valuation(
+            index_code, _to_date(start_date), _to_date(end_date), limit
+        )
+    )
     if not rows:
         return pd.DataFrame(columns=["trade_date", "index_code", "close", "pb", "pe"])
     return pd.DataFrame([dict(r) for r in rows])
@@ -114,18 +106,9 @@ def fetch_industry_valuation(
 
 def fetch_sector_flow(trade_date: str | None, limit: int) -> pd.DataFrame:
     """Sector fund-flow snapshot."""
-    if trade_date:
-        rows = _run(_fetch(
-            "SELECT * FROM akshare_sector_fund_flow_daily WHERE trade_date = $1"
-            " ORDER BY main_net_amount DESC NULLS LAST LIMIT $2",
-            _to_date(trade_date), limit,
-        ))
-    else:
-        rows = _run(_fetch(
-            "SELECT * FROM akshare_sector_fund_flow_daily"
-            " ORDER BY trade_date DESC, main_net_amount DESC NULLS LAST LIMIT $1",
-            limit,
-        ))
+    from openbb_provider_amazingdata import queries as _q
+
+    rows = _q.sync(_q.sector_flow(trade_date, limit))
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame([dict(r) for r in rows])
@@ -133,13 +116,9 @@ def fetch_sector_flow(trade_date: str | None, limit: int) -> pd.DataFrame:
 
 def fetch_lhb(symbol_f: str, limit: int) -> pd.DataFrame:
     """Long-hu-bang records for one stock, newest first."""
-    rows = _run(_fetch(
-        "SELECT trade_date, security_name, trader_name, flow_mark,"
-        " reason_type_name, change_range, buy_amount, sell_amount,"
-        " total_amount, total_volume FROM long_hu_bang WHERE market_code = $1"
-        " ORDER BY trade_date DESC LIMIT $2",
-        symbol_f, limit,
-    ))
+    from openbb_provider_amazingdata import queries as _q
+
+    rows = _q.sync(_q.lhb(symbol_f, limit))
     if not rows:
         return pd.DataFrame(columns=[
             "trade_date", "security_name", "trader_name", "flow_mark",
@@ -151,12 +130,9 @@ def fetch_lhb(symbol_f: str, limit: int) -> pd.DataFrame:
 
 def fetch_block_trade(symbol_f: str, limit: int) -> pd.DataFrame:
     """Block trading records for one stock, newest first."""
-    rows = _run(_fetch(
-        "SELECT trade_date, b_buyer_name, b_seller_name, b_share_price,"
-        " b_share_volume, b_share_amount FROM block_trading WHERE market_code = $1"
-        " ORDER BY trade_date DESC LIMIT $2",
-        symbol_f, limit,
-    ))
+    from openbb_provider_amazingdata import queries as _q
+
+    rows = _q.sync(_q.block_trade(symbol_f, limit))
     if not rows:
         return pd.DataFrame(columns=[
             "trade_date", "b_buyer_name", "b_seller_name", "b_share_price",
@@ -167,14 +143,9 @@ def fetch_block_trade(symbol_f: str, limit: int) -> pd.DataFrame:
 
 def fetch_margin(symbol_f: str, limit: int) -> pd.DataFrame:
     """Margin trading daily detail for one stock, newest first."""
-    rows = _run(_fetch(
-        "SELECT trade_date, borrow_money_balance, purch_with_borrow_money,"
-        " repayment_of_borrow_money, sec_lending_balance, sales_of_borrowed_sec,"
-        " repayment_of_borrow_sec, margin_trade_balance"
-        " FROM margin_detail_daily WHERE market_code = $1"
-        " ORDER BY trade_date DESC LIMIT $2",
-        symbol_f, limit,
-    ))
+    from openbb_provider_amazingdata import queries as _q
+
+    rows = _q.sync(_q.margin_detail(symbol_f, limit))
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame([dict(r) for r in rows])
