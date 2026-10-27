@@ -17,7 +17,9 @@ import pandas.core.generic as _generic
 _original_ndframe_fillna = _generic.NDFrame.fillna
 
 
-def _patched_fillna(self, value=None, method=None, axis=None, inplace=False, limit=None, downcast=None, **kwargs):
+def _patched_fillna(
+    self, value=None, method=None, axis=None, inplace=False, limit=None, downcast=None, **kwargs
+):
     if method is not None:
         if inplace:
             if method in ("ffill", "pad"):
@@ -97,6 +99,8 @@ def _install_tgw_filter() -> None:
     sys.stdout = _TGWLogFilter(sys.__stdout__)
     sys.stdout._is_tgw_filter = True  # type: ignore[attr-defined]
     _tgw_filter_installed = True
+
+
 from galaxy_core.shared_kernel.exceptions import (
     APIConnectionError,
     APITimeoutError,
@@ -123,6 +127,7 @@ class AmazingDataClient:
         self._market_data = None
         self._info_data = None
         self._calendar = None
+        self._username: str | None = None
 
     @classmethod
     def from_config(cls) -> "AmazingDataClient":
@@ -175,6 +180,9 @@ class AmazingDataClient:
             logger.info("已登录，跳过重复登录")
             return
 
+        # 保存用户名供 logout 使用(SDK logout 必须显式传 username)
+        self._username = username
+
         try:
             _install_tgw_filter()
             self._ad = ad
@@ -223,24 +231,33 @@ class AmazingDataClient:
                 original_error=e,
             ) from e
 
-    def logout(self, username: str = None) -> None:
-        """登出."""
-        if self._is_logged_in and self._ad:
-            try:
-                if username:
-                    self._ad.logout(username)  # type: ignore
-                else:
-                    # 如果没有提供用户名，尝试不带参数的登出
-                    try:
-                        self._ad.logout()  # type: ignore
-                    except TypeError:
-                        # 如果不带参数失败，记录警告但继续
-                        logger.warning("需要用户名才能登出，跳过登出流程")
-                self._is_logged_in = False
-                logger.info("AmazingData 登出成功")
-            except Exception as e:
-                # 登出是非关键操作，记录警告但不抛出异常
-                logger.warning(f"登出失败（非关键）: {type(e).__name__}: {e}")
+    def logout(self, username: str | None = None) -> None:
+        """登出.
+
+        SDK 的 ``ad.logout`` 要求显式 username（无参调用抛 TypeError，等于没登出）。
+        不传 username 时使用登录时保存的用户名。
+
+        2026-10-27 实证：此前无 username 时走无参调用 → TypeError → 仅本地翻转
+        ``_is_logged_in`` 却打「登出成功」日志（假成功），服务端会话仍在，
+        realtime_sub 随后登录触发 ForceLogout 踢死 scheduler 主进程。
+        """
+        if not self._is_logged_in or not self._ad:
+            return
+
+        username = username or self._username
+        if not username:
+            # 无用户名只能本地置为未登录,服务端会话等超时/下次登录 ForceLogout 回收
+            logger.warning("无用户名可登出,仅本地置为未登录（服务端会话未主动释放）")
+            self._is_logged_in = False
+            return
+
+        try:
+            self._ad.logout(username)  # type: ignore
+            self._is_logged_in = False
+            logger.info("AmazingData 登出成功")
+        except Exception as e:
+            # 登出是非关键操作，记录警告但不抛出异常；保持已登录标记（会话可能仍有效）
+            logger.warning(f"登出失败（非关键）: {type(e).__name__}: {e}")
 
     def ensure_logged_in(self) -> None:
         """确保已登录."""
@@ -1459,5 +1476,3 @@ class AmazingDataClient:
                 endpoint=endpoint,
                 original_error=e,
             ) from e
-
-
