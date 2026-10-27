@@ -13,6 +13,7 @@
 ```bash
 cp openbb-app.env.example .env   # 填 APP_API_KEY + GALAXY_PG_*
 uv sync
+uv run openbb-build   # 必跑:openbb 静态客户端 provider 枚举重建(装/升级 provider 后也要)
 uv run uvicorn openbb_app.main:app --reload --port 8001
 ```
 
