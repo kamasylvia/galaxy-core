@@ -87,8 +87,25 @@ class AmazingDataIncomeStatementQueryParams(IncomeStatementQueryParams):
 
 
 class AmazingDataIncomeStatementData(IncomeStatementData):
-    """A-share income statement: core GAAP aliases as extension fields."""
+    """A-share income statement.
 
+    标准(生态惯例)字段 = fmp 命名,与 A 股列一一对应、不合成不造数
+    (gross_profit/SG&A 合计等需计算的口径不映射);A 股原列名保留为
+    扩展字段(api 单出口消费同形)。
+    """
+
+    revenue: float | None = Field(default=None, description="营业收入(元)")
+    cost_of_revenue: float | None = Field(default=None, description="营业成本(元)")
+    ebit: float | None = Field(default=None)
+    ebitda: float | None = Field(default=None)
+    income_tax_expense: float | None = Field(default=None, description="所得税(元)")
+    research_and_development_expense: float | None = Field(default=None, description="研发费用(元)")
+    general_and_admin_expense: float | None = Field(default=None, description="管理费用(元)")
+    selling_and_marketing_expense: float | None = Field(default=None, description="销售费用(元)")
+    consolidated_net_income: float | None = Field(default=None, description="合并净利润(元)")
+    bottom_line_net_income: float | None = Field(default=None, description="归母净利润(元)")
+    basic_earnings_per_share: float | None = Field(default=None)
+    diluted_earnings_per_share: float | None = Field(default=None)
     tot_opera_rev: float | None = Field(default=None, description="营业收入(元)")
     opera_profit: float | None = Field(default=None, description="营业利润(元)")
     net_pro_excl_min_int_inc: float | None = Field(
@@ -104,9 +121,13 @@ class AmazingDataBalanceSheetQueryParams(BalanceSheetQueryParams):
 
 
 class AmazingDataBalanceSheetData(BalanceSheetData):
-    """A-share balance sheet: core aliases as extension fields."""
+    """A-share balance sheet(标准字段 = fmp 惯例命名,A 股原列保留)."""
 
     total_assets: float | None = Field(default=None, description="资产总计(元)")
+    total_liabilities: float | None = Field(default=None, description="负债合计(元)")
+    total_equity: float | None = Field(
+        default=None, description="股东权益合计(含少数股东,元)"
+    )
     total_liab: float | None = Field(default=None, description="负债合计(元)")
     tot_share_equity_incl_min_int: float | None = Field(
         default=None, description="股东权益(含少数股东,元)"
@@ -120,8 +141,17 @@ class AmazingDataCashFlowQueryParams(CashFlowStatementQueryParams):
 
 
 class AmazingDataCashFlowData(CashFlowStatementData):
-    """A-share cash flow statement: core aliases as extension fields."""
+    """A-share cash flow statement(标准字段 = fmp 惯例命名,A 股原列保留)."""
 
+    net_cash_from_operating_activities: float | None = Field(
+        default=None, description="经营活动现金流净额(元)"
+    )
+    net_cash_from_investing_activities: float | None = Field(
+        default=None, description="投资活动现金流净额(元)"
+    )
+    net_cash_from_financing_activities: float | None = Field(
+        default=None, description="筹资活动现金流净额(元)"
+    )
     net_cash_flows_opera_act: float | None = Field(
         default=None, description="经营活动现金流净额(元)"
     )
@@ -167,14 +197,30 @@ class AmazingDataIncomeStatementFetcher(
         return _StatementFetcherMixin._extract(
             query,
             "income",
-            "tot_opera_rev, opera_profit, net_pro_excl_min_int_inc, basic_eps",
+            "tot_opera_rev, tot_opera_cost, ebit, ebitda, income_tax, rd_exp,"
+            " less_admin_exp, less_selling_exp, net_pro_incl_min_int_inc,"
+            " net_pro_excl_min_int_inc, basic_eps, diluted_eps, opera_profit",
         )
 
     @staticmethod
     def transform_data(query, data: list[dict], **kwargs: Any):
         if not data:
             raise EmptyDataError(f"no income statement rows for {query.symbol}")
-        return [AmazingDataIncomeStatementData(**r) for r in data]
+        mapped = []
+        for r in data:
+            r = dict(r)
+            r["revenue"] = r.get("tot_opera_rev")
+            r["cost_of_revenue"] = r.get("tot_opera_cost")
+            r["income_tax_expense"] = r.get("income_tax")
+            r["research_and_development_expense"] = r.get("rd_exp")
+            r["general_and_admin_expense"] = r.get("less_admin_exp")
+            r["selling_and_marketing_expense"] = r.get("less_selling_exp")
+            r["consolidated_net_income"] = r.get("net_pro_incl_min_int_inc")
+            r["bottom_line_net_income"] = r.get("net_pro_excl_min_int_inc")
+            r["basic_earnings_per_share"] = r.get("basic_eps")
+            r["diluted_earnings_per_share"] = r.get("diluted_eps")
+            mapped.append(AmazingDataIncomeStatementData(**r))
+        return mapped
 
 
 class AmazingDataBalanceSheetFetcher(
@@ -197,7 +243,14 @@ class AmazingDataBalanceSheetFetcher(
     def transform_data(query, data: list[dict], **kwargs: Any):
         if not data:
             raise EmptyDataError(f"no balance sheet rows for {query.symbol}")
-        return [AmazingDataBalanceSheetData(**r) for r in data]
+        mapped = []
+        for r in data:
+            r = dict(r)
+            r["total_assets"] = r.get("total_assets")
+            r["total_liabilities"] = r.get("total_liab")
+            r["total_equity"] = r.get("tot_share_equity_incl_min_int")
+            mapped.append(AmazingDataBalanceSheetData(**r))
+        return mapped
 
 
 class AmazingDataCashFlowFetcher(
@@ -220,4 +273,11 @@ class AmazingDataCashFlowFetcher(
     def transform_data(query, data: list[dict], **kwargs: Any):
         if not data:
             raise EmptyDataError(f"no cash flow rows for {query.symbol}")
-        return [AmazingDataCashFlowData(**r) for r in data]
+        mapped = []
+        for r in data:
+            r = dict(r)
+            r["net_cash_from_operating_activities"] = r.get("net_cash_flows_opera_act")
+            r["net_cash_from_investing_activities"] = r.get("net_cash_flows_inv_act")
+            r["net_cash_from_financing_activities"] = r.get("net_cash_flows_fin_act")
+            mapped.append(AmazingDataCashFlowData(**r))
+        return mapped
