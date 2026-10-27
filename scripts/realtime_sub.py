@@ -11,6 +11,7 @@ log = logging.getLogger("realtime_sub")
 
 PERIODS = ["min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120"]
 
+
 def _cfg(key: str, default):
     """读 config/settings.toml [scheduler] 节(唯一时间来源)。"""
     from galaxy_core.shared_kernel.utils.config_loader import get_config
@@ -117,11 +118,16 @@ async def _upsert_batch(period: str, bars: list) -> int:
         elif isinstance(b, dict):
             d = b
         else:
-            d = {k: getattr(b, k, None) for k in (
-                "code", "trade_time", "open", "high", "low",
-                "close", "volume", "amount")}
+            d = {
+                k: getattr(b, k, None)
+                for k in ("code", "trade_time", "open", "high", "low", "close", "volume", "amount")
+            }
         code = d.get("code")
-        tt = d.get("trade_time")
+        # SDK pydantic Kline 的时间字段是 kline_time(2026-10-27 实测定因:
+        # 此前只取 trade_time 恒为 None,「无时间戳」守卫把 100% 的 bar 丢弃,
+        # flush 日志恒「0 bars」、实时落库全灭——推送其实一直正常到达);
+        # dict/属性形态数据(旧路径)用 trade_time,两种字段名兼容。
+        tt = d.get("kline_time") or d.get("trade_time")
         if isinstance(tt, str):
             tt = datetime.fromisoformat(tt)
         if not code or tt is None:
@@ -189,6 +195,7 @@ def main() -> int:
 
     # 到点自停:end 时间到则退出(时间读 config,不硬编码)
     end_str = str(_cfg("realtime_sub_end", "15:30"))
+
     def _watcher():
         from datetime import datetime as _dt
 
@@ -211,8 +218,12 @@ def main() -> int:
         mock_bar = {
             "code": universe[0],
             "trade_time": datetime.now().replace(second=0, microsecond=0),
-            "open": 10.0, "high": 10.5, "low": 9.8, "close": 10.2,
-            "volume": 1000, "amount": 10200.0,
+            "open": 10.0,
+            "high": 10.5,
+            "low": 9.8,
+            "close": 10.2,
+            "volume": 1000,
+            "amount": 10200.0,
         }
         n = asyncio.run(_upsert_batch("min1", [mock_bar]))
         log.info(f"dry-run 写入 {n} 条,完成")
