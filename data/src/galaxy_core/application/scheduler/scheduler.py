@@ -437,6 +437,24 @@ class AutoSyncScheduler:
             self._tasks.add(task)
             task.add_done_callback(self._on_task_done)
 
+    @staticmethod
+    def _killpg_after_grace(pid: int, grace_seconds: int = 5) -> None:
+        """窗口结束 killpg(SIGTERM)后 grace 秒仍存活则 SIGKILL(后台线程执行)."""
+        import os as _os
+        import signal as _sig
+        import time as _time
+
+        _time.sleep(grace_seconds)
+        try:
+            _os.killpg(pid, 0)  # 存活检查
+        except Exception:
+            return
+        try:
+            _os.killpg(pid, _sig.SIGKILL)
+            logger.warning(f"realtime_sub 进程组 {pid} grace {grace_seconds}s 未退,SIGKILL")
+        except Exception:
+            pass
+
     async def _check_realtime_sub_window(
         self, today: date, current_time: time
     ) -> None:
@@ -483,7 +501,24 @@ class AutoSyncScheduler:
                 )
         elif not in_window and alive:
             logger.info(f"窗口结束({end_str}),停止 realtime_sub")
-            proc.terminate()
+            # 镜像 stop() 的组杀逻辑(2026-10-28):单发 proc.terminate() 只杀 uv 外壳,
+            # python 子进程阻塞在 SDK C 扩展不退 → uv 等待 → 残留进程每分钟重试。
+            # killpg 整组 SIGTERM,5s 不退 SIGKILL(start_new_session 保证 pgid=pid)。
+            import os as _os
+            import signal as _sig
+
+            try:
+                _os.killpg(proc.pid, _sig.SIGTERM)
+            except Exception:
+                proc.terminate()
+            try:
+                import asyncio as _asyncio
+
+                _asyncio.get_running_loop().run_in_executor(
+                    None, self._killpg_after_grace, proc.pid
+                )
+            except Exception:
+                pass
 
 
     async def _run_minute_cover_with_cleanup(self, today: date) -> None:

@@ -263,21 +263,30 @@ class KlineStoreAdapter:
             return {}
 
         result: dict[str, date] = {}
+        # 分钟表只认 is_final=true 行(2026-10-28):realtime_sub 盘中写的是
+        # is_final=false 的稀疏 bar(14:00 起订,日均 ~60 根/只),MAX(trade_time)
+        # 把 last_sync_date 顶到当日后,定稿覆盖的「需同步」判定会永久跳过该日,
+        # 09:30-14:00 段无 API 回补(10/27 实证:1627/1630 只 <100 bar 却标
+        # success)。分钟周期回填只统计已定稿行;day/week 表无 is_final 列不受影响。
+        minute_intervals = ("min1", "min3", "min5", "min10", "min15", "min30", "min60", "min120")
         try:
             async with self._db.session() as session:
                 # DISTINCT ON 替代 GROUP BY + MAX，避免哈希聚合内存溢出。
                 # (symbol, trade_time) 复合索引使 PostgreSQL 只需扫描每 symbol
                 # 最后一条记录，无需 GROUP BY 的哈希表或排序缓冲。
+                conditions = [
+                    table_model.symbol
+                    == func.any(bindparam("symbols", value=symbols, type_=ARRAY(String)))
+                ]
+                if interval.value in minute_intervals:
+                    conditions.append(table_model.is_final.is_(True))
                 stmt = (
                     select(
                         table_model.symbol,
                         table_model.trade_time.label("max_date"),
                     )
                     .distinct(table_model.symbol)
-                    .where(
-                        table_model.symbol
-                        == func.any(bindparam("symbols", value=symbols, type_=ARRAY(String)))
-                    )
+                    .where(*conditions)
                     .order_by(table_model.symbol, table_model.trade_time.desc())
                 )
                 rows = await session.execute(stmt)

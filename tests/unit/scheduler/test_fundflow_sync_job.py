@@ -583,7 +583,8 @@ class TestDfToRecords:
         )
         assert len(records) == 1
         rec = records[0]
-        assert rec.trade_date == "2024-01-15"
+        # 2026-10-28:trade_date 归一为 YYYYMMDD(store 前缀解析要求)
+        assert rec.trade_date == "20240115"
         assert rec.sum_borrow_money_balance == 1500000000.0
 
     def test_margin_detail_records_maps_with_market_code(self):
@@ -785,3 +786,52 @@ class TestRetryBehavior:
             if c[0][0] == "margin_detail"
         ]
         assert len(detail_running) == 1
+
+
+class TestMarginSummaryFullPullFilter:
+    """margin_summary 无参全量 + 客户端窗口过滤(2026-10-28).
+
+    SDK 带 begin/end 参数对空窗口崩溃('NoneType' not subscriptable,
+    AM 侧 10/22 起断供期间天天崩 ×4 重试);无参全量拉取正常。
+    """
+
+    @staticmethod
+    def _full_df() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "TRADE_DATE": [20240120, 20240110, 20240101],
+                "SUM_BORROW_MONEY_BALANCE": [3e9, 2e9, 1e9],
+            }
+        )
+
+    async def test_filters_to_incremental_window(
+        self, job, amazing_provider, amazing_store
+    ):
+        """全量 df 按增量窗 [begin, end] 客户端过滤后入库."""
+        job._last_sync_store.get_last_sync_date = AsyncMock(
+            return_value=date(2024, 1, 5)
+        )  # 窗口 20240106~20240115
+        amazing_provider.get_margin_summary = AsyncMock(
+            return_value=self._full_df()
+        )
+        amazing_store.save_margin_summary = AsyncMock(return_value=1)
+        await job.run_daily(date(2024, 1, 15), target="margin")
+        call = amazing_provider.get_margin_summary.call_args
+        # 不再传日期参数(全量拉取)
+        assert call.kwargs.get("begin_date") is None
+        assert call.kwargs.get("end_date") is None
+        saved_arg = amazing_store.save_margin_summary.call_args[0][0]
+        assert [r.trade_date for r in saved_arg] == ["20240110"]
+
+    async def test_empty_window_no_save_no_raise(
+        self, job, amazing_provider, amazing_store
+    ):
+        """窗口无数据(上游断供)→ 不入库不 raise,不推进 last_sync."""
+        job._last_sync_store.get_last_sync_date = AsyncMock(
+            return_value=date(2024, 1, 12)
+        )  # 窗口 20240113~20240115
+        df = self._full_df()[self._full_df()["TRADE_DATE"] != 20240110]
+        amazing_provider.get_margin_summary = AsyncMock(return_value=df)
+        amazing_store.save_margin_summary = AsyncMock()
+        await job.run_daily(date(2024, 1, 15), target="margin")
+        amazing_store.save_margin_summary.assert_not_called()

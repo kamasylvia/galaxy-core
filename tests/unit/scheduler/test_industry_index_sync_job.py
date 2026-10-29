@@ -523,3 +523,77 @@ class TestIndustryDailyCoverageGuard:
             if c[0][0] == "industry_daily"
         ]
         assert len(success) == 1
+
+
+class TestDfFormatRobustness:
+    """SDK 返回格式漂移回归(2026-09-17 断供一个月的根因).
+
+    新格式:TRADE_DATE 为索引名(datetime)+ INDEX_CODE/TOTAL_CAP 为普通列
+    → 旧守卫 `reset if "INDEX_CODE" not in columns` 跳过 reset,
+    row.get("TRADE_DATE") 恒 None → 100% 行静默丢弃。
+    """
+
+    def _new_format_df(self) -> pd.DataFrame:
+        idx = pd.DatetimeIndex(
+            [pd.Timestamp("2026-10-27"), pd.Timestamp("2026-10-26")],
+            name="TRADE_DATE",
+        )
+        return pd.DataFrame(
+            {
+                "OPEN": [2467.69, 2483.87],
+                "CLOSE": [2443.14, 2476.01],
+                "PRE_CLOSE": [2476.01, 2491.17],
+                "TOTAL_CAP": [55553272.0, 56300681.0],
+                "INDEX_CODE": ["801010.SI", "801010.SI"],
+            },
+            index=idx,
+        )
+
+    def test_new_format_daily_records_not_dropped(self):
+        """新格式(TRADE_DATE 索引 + INDEX_CODE 列)不再 100% 丢行."""
+        records = IndustryIndexSyncJob._df_to_daily_records(
+            self._new_format_df()
+        )
+        assert len(records) == 2
+        rec = records[0]
+        assert rec.index_code == "801010.SI"
+        assert rec.trade_date == "20261027"
+        assert rec.total_cap == 55553272.0
+
+    def test_new_format_index_code_fallback(self):
+        """INDEX_CODE 列缺失时回退 dict key."""
+        df = self._new_format_df().drop(columns=["INDEX_CODE"])
+        records = IndustryIndexSyncJob._df_to_daily_records(df, "801010.SI")
+        assert len(records) == 2
+        assert records[0].index_code == "801010.SI"
+
+    def test_old_format_still_works(self):
+        """旧格式(纯 OHLC 列 + 日期索引,无 INDEX_CODE)reset 路径不回归."""
+        idx = pd.DatetimeIndex([pd.Timestamp("2024-01-15")], name="TRADE_DATE")
+        df = pd.DataFrame({"OPEN": [1.0], "CLOSE": [2.0]}, index=idx)
+        records = IndustryIndexSyncJob._df_to_daily_records(df, "BK0001")
+        assert len(records) == 1
+        assert records[0].trade_date == "20240115"
+        assert records[0].index_code == "BK0001"
+
+    def test_normalize_trade_date_string_datetime(self):
+        """字符串 datetime("2026-10-27 00:00:00")归一为 YYYYMMDD."""
+        assert (
+            IndustryIndexSyncJob._normalize_trade_date("2026-10-27 00:00:00")
+            == "20261027"
+        )
+        assert (
+            IndustryIndexSyncJob._normalize_trade_date("20261027") == "20261027"
+        )
+        assert IndustryIndexSyncJob._normalize_trade_date(None) is None
+
+    def test_weight_records_new_format(self):
+        """weight 同款守卫修复:TRADE_DATE 索引格式不再丢行."""
+        idx = pd.DatetimeIndex([pd.Timestamp("2024-01-15")], name="TRADE_DATE")
+        df = pd.DataFrame(
+            {"CON_CODE": ["600000.SH"], "WEIGHT": [3.5]}, index=idx
+        )
+        records = IndustryIndexSyncJob._df_to_weight_records(df, "BK0001")
+        assert len(records) == 1
+        assert records[0].trade_date == "20240115"
+        assert records[0].index_code == "BK0001"

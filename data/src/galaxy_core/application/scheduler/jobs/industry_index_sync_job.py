@@ -27,7 +27,7 @@ industry_daily 连续多日 0 条无人告警。改为编排/执行两层分离 
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -234,7 +234,7 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
                 for _index_code, df in data.items():
                     if df is None or df.empty:
                         continue
-                    records.extend(self._df_to_daily_records(df))
+                    records.extend(self._df_to_daily_records(df, _index_code))
 
         if total_chunks > 0 and failed_chunks == total_chunks:
             raise RuntimeError(
@@ -323,7 +323,7 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
             for _index_code, df in data.items():
                 if df is None or df.empty:
                     continue
-                records.extend(self._df_to_weight_records(df))
+                records.extend(self._df_to_weight_records(df, _index_code))
 
             if records:
                 saved = await self._store.save_industry_weight(records)
@@ -466,7 +466,7 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
         for _index_code, df in data.items():
             if df is None or df.empty:
                 continue
-            records.extend(self._df_to_constituent_records(df))
+            records.extend(self._df_to_constituent_records(df, _index_code))
 
         saved = await self._store.save_industry_constituent(records)
         logger.info(f"industry_constituent 同步完成: {saved} 条成分股记录")
@@ -483,6 +483,47 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
         if result.lower() in ("nan", "none", "nat", ""):
             return None
         return result
+
+    @classmethod
+    def _normalize_trade_date(cls, value: Any) -> str | None:
+        """任意形态的交易日 → YYYYMMDD 字符串.
+
+        SDK 返回格式会漂移(2026-09-17 实证):TRADE_DATE 曾是索引/普通列,
+        dtype 曾是 int 字符串/Timestamp/datetime。统一在此归一,store 层
+        _yyyymmdd_to_date 只认 YYYYMMDD 前缀。
+        """
+        if isinstance(value, pd.Timestamp):
+            return value.strftime("%Y%m%d")
+        if isinstance(value, datetime):
+            return value.strftime("%Y%m%d")
+        if isinstance(value, date):
+            return value.strftime("%Y%m%d")
+        s = cls._safe_str(value)
+        if s is None:
+            return None
+        if s.isdigit() and len(s) == 8:
+            return s
+        # "2026-10-27" / "2026-10-27 00:00:00"
+        if "-" in s:
+            head = s[:10].replace("-", "")
+            return head if head.isdigit() and len(head) == 8 else None
+        return None
+
+    @classmethod
+    def _reset_for_record(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """把索引中的字段落成列(按缺失字段判定,不再依赖旧格式假设).
+
+        2026-09-17 SDK 格式变更:industry_daily 的 df 变为
+        「TRADE_DATE 为索引名 + INDEX_CODE/TOTAL_CAP 为普通列」,旧守卫
+        `reset_index() if "INDEX_CODE" not in df.columns` 在新格式下跳过
+        reset → row.get("TRADE_DATE") 恒 None → 100% 行静默丢弃,行业日行情
+        断供一个月。改按「记录需要的字段是否在列」判定:TRADE_DATE 不在列
+        (无论它是不是索引名)都 reset_index()。旧格式(纯 OHLC 列 + 日期索引)
+        行为不变。
+        """
+        if "TRADE_DATE" not in df.columns:
+            return df.reset_index()
+        return df
 
     @staticmethod
     def _safe_float(value: Any) -> float | None:
@@ -524,12 +565,16 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
         return records
 
     @classmethod
-    def _df_to_constituent_records(cls, df: pd.DataFrame) -> list[IndustryConstituent]:
-        df_reset = df.reset_index() if "INDEX_CODE" not in df.columns else df
+    def _df_to_constituent_records(
+        cls, df: pd.DataFrame, index_code_fallback: str | None = None
+    ) -> list[IndustryConstituent]:
+        df_reset = cls._reset_for_record(df)
         records: list[IndustryConstituent] = []
         for _, row in df_reset.iterrows():
             records.append(IndustryConstituent(
-                index_code=cls._safe_str(row.get("INDEX_CODE")) or "",
+                index_code=cls._safe_str(row.get("INDEX_CODE"))
+                or index_code_fallback
+                or "",
                 con_code=cls._safe_str(row.get("CON_CODE")) or "",
                 in_date=cls._safe_str(row.get("INDATE")),
                 out_date=cls._safe_str(row.get("OUTDATE")),
@@ -538,15 +583,19 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
         return records
 
     @classmethod
-    def _df_to_weight_records(cls, df: pd.DataFrame) -> list[IndustryWeight]:
-        df_reset = df.reset_index() if "INDEX_CODE" not in df.columns else df
+    def _df_to_weight_records(
+        cls, df: pd.DataFrame, index_code_fallback: str | None = None
+    ) -> list[IndustryWeight]:
+        df_reset = cls._reset_for_record(df)
         records: list[IndustryWeight] = []
         for _, row in df_reset.iterrows():
-            trade_date = cls._safe_str(row.get("TRADE_DATE"))
+            trade_date = cls._normalize_trade_date(row.get("TRADE_DATE"))
             if trade_date is None:
                 continue
             records.append(IndustryWeight(
-                index_code=cls._safe_str(row.get("INDEX_CODE")) or "",
+                index_code=cls._safe_str(row.get("INDEX_CODE"))
+                or index_code_fallback
+                or "",
                 con_code=cls._safe_str(row.get("CON_CODE")) or "",
                 trade_date=trade_date,
                 weight=cls._safe_float(row.get("WEIGHT")),
@@ -554,12 +603,16 @@ class IndustryIndexSyncJob(IncrementalSyncMixin):
         return records
 
     @classmethod
-    def _df_to_daily_records(cls, df: pd.DataFrame) -> list[IndustryDaily]:
-        df_reset = df.reset_index() if "INDEX_CODE" not in df.columns else df
+    def _df_to_daily_records(
+        cls, df: pd.DataFrame, index_code_fallback: str | None = None
+    ) -> list[IndustryDaily]:
+        df_reset = cls._reset_for_record(df)
         records: list[IndustryDaily] = []
         for _, row in df_reset.iterrows():
-            index_code = cls._safe_str(row.get("INDEX_CODE"))
-            trade_date = cls._safe_str(row.get("TRADE_DATE"))
+            index_code = (
+                cls._safe_str(row.get("INDEX_CODE")) or index_code_fallback
+            )
+            trade_date = cls._normalize_trade_date(row.get("TRADE_DATE"))
             if not index_code or trade_date is None:
                 continue
             records.append(IndustryDaily(

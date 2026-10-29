@@ -223,9 +223,11 @@ def main() -> int:
     def _watcher():
         from datetime import datetime as _dt
 
+        from galaxy_core.shared_kernel.utils.constants import CST as _CST
+
         eh, em = (int(x) for x in end_str.split(":"))
         while not stop_event.is_set():
-            now = _dt.now()
+            now = _dt.now(_CST)  # 北京时基(此前误用服务器本地 UTC,晚 8h 触发)
             if (now.hour, now.minute) >= (eh, em):
                 log.info(f"到收盘窗口 {end_str},退出订阅")
                 stop_event.set()

@@ -204,3 +204,40 @@ class TestKlineStoreAdapterLastSyncDate:
         asyncio.run(adapter.set_last_sync_dates({}, Interval.DAY))
 
         mock_db.session.assert_not_called()
+
+
+class TestBackfillFromKlineIsFinal:
+    """分钟周期 last_sync_date 回填只认 is_final=true(2026-10-28).
+
+    realtime_sub 盘中写 is_final=false 稀疏 bar,回填若不区分会把
+    last_sync_date 顶到当日 → 定稿覆盖永久跳过(10/27 实证 1627/1630
+    只 <100 bar 却标 success)。
+    """
+
+    def _capture_backfill_stmt(self, interval):
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_result = MagicMock()
+        mock_result.__iter__ = MagicMock(return_value=iter([]))
+        mock_session.execute.return_value = mock_result
+
+        mock_db = MagicMock()
+        mock_db.session.return_value = mock_session_ctx
+
+        adapter = KlineStoreAdapter(mock_db)
+        asyncio.run(adapter._backfill_from_kline(["600000.SH"], interval))
+        assert mock_session.execute.called
+        return mock_session.execute.call_args[0][0]
+
+    def test_minute_backfill_filters_is_final(self):
+        """min1 回填语句应带 is_final 条件."""
+        stmt = self._capture_backfill_stmt(Interval.MIN1)
+        assert "is_final" in str(stmt)
+
+    def test_day_backfill_no_is_final(self):
+        """day 表无 is_final 列,回填语句不应出现该条件."""
+        stmt = self._capture_backfill_stmt(Interval.DAY)
+        assert "is_final" not in str(stmt)

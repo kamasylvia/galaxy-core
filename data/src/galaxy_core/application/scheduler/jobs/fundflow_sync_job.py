@@ -309,10 +309,17 @@ class FundFlowSyncJob(IncrementalSyncMixin):
         logger.info(f"{sync_type} 同步完成: {saved} 条大宗交易记录")
 
     async def _sync_margin_summary(self, today: date, period_id: str) -> None:
-        """执行层:两融汇总(全市场,无 code_list). 单次 get_margin_summary.
+        """执行层:两融汇总(全市场,无 code_list). 无参全量拉取 + 客户端窗口过滤.
 
         Phase 03(03-05):全局增量,scope_key=None。
         失败 raise(传到 sync_with_retry 触发重试)。
+
+        2026-10-28:SDK get_margin_summary 带 begin_date/end_date 时,窗口内
+        无数据会崩('NoneType' object is not subscriptable,SDK 内部对空响应
+        下标;AM 侧 10/22 起两融汇总断供,窗口 10/22+ 天天崩 ×4 重试)。
+        无参全量拉取正常(~8900 行全史,探针实证)。改无参全量 + 客户端按
+        [begin, end] 过滤:窗口空 = 上游未恢复,记日志直接返回(不 raise 不
+        推进 last_sync,上游恢复后窗口语义自动补齐),不再空耗重试。
         """
         sync_type = _SYNC_MARGIN_SUMMARY
         begin, end = await self._resolve_incremental_range(
@@ -321,13 +328,28 @@ class FundFlowSyncJob(IncrementalSyncMixin):
         df = await self._amazing_provider.get_margin_summary(
             local_path=self._cache_dir,
             is_local=False,
-            begin_date=begin,
-            end_date=end,
         )
-        if df is None or df.empty:
+        if df is None or df.empty or "TRADE_DATE" not in df.columns:
             logger.info(f"{sync_type} 返回空数据")
             return
-        records = self._df_to_margin_summary_records(df)
+        # 全量 df 的 TRADE_DATE 可能是 int/float(iterrows 上转)/"YYYY-MM-DD"
+        # 字符串,统一归一成 8 位数字再比较
+        td = pd.to_numeric(
+            df["TRADE_DATE"]
+            .astype(str)
+            .str.replace("-", "", regex=False)
+            .str.slice(0, 8),
+            errors="coerce",
+        )
+        window = df[(td >= begin) & (td <= end)]
+        if window.empty:
+            logger.info(
+                f"{sync_type} 窗口 {begin}~{end} 无数据(上游断供或未发布),"
+                f"全量 {len(df)} 行中最新 "
+                f"{int(td.max()) if td.notna().any() else '-'} — 不推进 last_sync"
+            )
+            return
+        records = self._df_to_margin_summary_records(window)
         saved = await self._amazing_store.save_margin_summary(records)
         # Phase 03 D-08:全局表单条 last_sync_date(scope_key=None)
         await self._advance_last_sync_date_global(
@@ -777,13 +799,30 @@ class FundFlowSyncJob(IncrementalSyncMixin):
             ))
         return records
 
+    @staticmethod
+    def _normalize_date_str(value: Any) -> str | None:
+        """任意形态日期 → YYYYMMDD 字符串.
+
+        iterrows 会把数值行上转 float(20240110 → "20240110.0"),SDK 也会给
+        "2024-01-15" 形态;store 层 _yyyymmdd_to_date 按前缀解析,统一在此清洗。
+        """
+        s = FundFlowSyncJob._safe_str(value)
+        if s is None:
+            return None
+        if s.endswith(".0") and s[:-2].isdigit():
+            return s[:-2]
+        if "-" in s:
+            head = s[:10].replace("-", "")
+            return head if head.isdigit() and len(head) == 8 else None
+        return s
+
     @classmethod
     def _df_to_margin_summary_records(cls, df: pd.DataFrame) -> list[MarginSummary]:
         """两融汇总 df → VO. 全市场每日 1 行汇总,大写列."""
         df_reset = df.reset_index() if "TRADE_DATE" not in df.columns else df
         records: list[MarginSummary] = []
         for _, row in df_reset.iterrows():
-            trade_date = cls._safe_str(row.get("TRADE_DATE"))
+            trade_date = cls._normalize_date_str(row.get("TRADE_DATE"))
             if trade_date is None:
                 continue
             records.append(MarginSummary(
