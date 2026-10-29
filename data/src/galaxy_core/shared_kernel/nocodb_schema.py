@@ -2,7 +2,7 @@
 
 - TABLE_NAMES:canonical 英文表名 → nocodb 中文表名(单一事实源,禁止裸写中文表名字符串)
 - SECURITY_TYPE_EXPAND / expand_security_type:kline security_type 列的写入形态
-  (市场码 → 市场码+大类码 逗号多值串,与 qnap nocodb 副本数据形态一致)
+  (市场码 → 市场码+大类码 逗号多值串,与 nocodb 副本数据形态一致)
 - market_code_from_stored:读取侧从多值串还原市场码(首元素)
 - coerce_nocodb_columns:写入侧 Date/Boolean/Text 列值强转
 - SECURITY_TYPE_EXPAND / expand_security_type:已恒等化(2026-09-28 D4 拆列后

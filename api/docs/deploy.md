@@ -14,7 +14,7 @@ cp openbb-app.env.example .env   # 填 APP_API_KEY + GALAXY_PG_* (见下)
 | `APP_API_KEY` | Workspace 后端鉴权 key(Bearer) | 必填 |
 | `GALAXY_PG_HOST` | PG 主机 | `127.0.0.1`(原生) |
 | `GALAXY_PG_PORT` | PG 端口 | `5432` |
-| `GALAXY_PG_DB/USER/PASSWORD` | 库/用户/密码 | `galaxy/postgres/postgres` |
+| `GALAXY_PG_DB/USER/PASSWORD` | 库/用户/密码 | 自定(与 galaxy-core 的 PG 一致) |
 | `DATA_FOLDER_PATH` | SQLite 落点(`equity.db`) | `data` |
 | `OPENROUTER_API_KEY` | AI 链(builder agent) | 可空 |
 
