@@ -43,7 +43,7 @@ GALAXY_PG_HOST=127.0.0.1
 GALAXY_PG_PORT=5432
 GALAXY_PG_DB=galaxy
 GALAXY_PG_USER=postgres
-GALAXY_PG_PASSWORD=postgres
+GALAXY_PG_PASSWORD=<db-password>
 OPENROUTER_API_KEY=<...>
 EOF
 chmod 600 ~/.config/galaxy-web.env
