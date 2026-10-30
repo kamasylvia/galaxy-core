@@ -438,7 +438,6 @@ class AutoSyncScheduler:
             task.add_done_callback(self._on_task_done)
 
     @staticmethod
-    @staticmethod
     def _safe_killpg(pid: int, sig: int) -> bool:
         """killpg 带守卫:拒绝 pgid<=1 与非整数 pid,返回是否发出。
 
@@ -458,6 +457,7 @@ class AutoSyncScheduler:
         except (ProcessLookupError, PermissionError, OSError):
             return False
 
+    @staticmethod
     def _killpg_after_grace(pid: int, grace_seconds: int = 5) -> None:
         """窗口结束 killpg(SIGTERM)后 grace 秒仍存活则 SIGKILL(后台线程执行)."""
         import os as _os

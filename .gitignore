@@ -27,8 +27,10 @@ htmlcov/
 *.pem
 *.key
 
-# 运行时数据与日志
-data/
+# 运行时数据与日志（注意:10-27 重组后源码在 data/src/,仅忽略 data/ 下运行时子目录）
+data/backup/
+data/local_cache/
+data/logs/
 logs/
 cache/
 

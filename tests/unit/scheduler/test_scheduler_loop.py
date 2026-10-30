@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import inspect
 import os
 import signal
 from datetime import date, datetime, time, timedelta, timezone
@@ -863,3 +864,12 @@ class TestRealtimeSubWindowLogout:
 
         proc.terminate.assert_called_once()
         scheduler._amazing_client.logout.assert_not_called()
+
+    def test_killpg_after_grace_is_static_no_self_in_pid(self):
+        """_killpg_after_grace 必须 static:漏写装饰器则 self 吞 pid,真 pid 落进
+        grace_seconds → time.sleep(12345) 卡死 loop 关闭(全量单测 61% 僵死根因)."""
+        assert isinstance(
+            inspect.getattr_static(AutoSyncScheduler, "_killpg_after_grace"),
+            staticmethod,
+        )
+
