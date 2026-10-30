@@ -39,11 +39,11 @@ def get_universe() -> list[str]:
     """
     import asyncpg
 
-    from galaxy_core.shared_kernel.utils.infisical_config import get_env
+    from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host
 
     async def _fetch():
         conn = await asyncpg.connect(
-            host=get_env("DB_HOST", "127.0.0.1"),
+            host=resolve_db_host(),
             port=int(get_env("DB_PORT", "5432")),
             database=get_env("DB_NAME", "galaxy"),
             user=get_env("DB_USER"),
@@ -84,11 +84,11 @@ def is_trading_day() -> bool:
     """今日是否交易日(查 trading_calendar,失败默认是,宁可空跑)。"""
     import asyncpg
 
-    from galaxy_core.shared_kernel.utils.infisical_config import get_env
+    from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host
 
     async def _check():
         conn = await asyncpg.connect(
-            host=get_env("DB_HOST", "127.0.0.1"),
+            host=resolve_db_host(),
             port=int(get_env("DB_PORT", "5432")),
             database=get_env("DB_NAME", "galaxy"),
             user=get_env("DB_USER"),

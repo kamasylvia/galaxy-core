@@ -15,15 +15,21 @@ load_dotenv()
 
 # 导入我们的模型
 from galaxy_core.database.models import Base
+from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host
+
+_infisical_env = os.getenv("INFISICAL_ENVIRONMENT", "dev")
+_db_host = resolve_db_host(environment=_infisical_env)
+_db_port = get_env("DB_PORT", "5432", environment=_infisical_env)
+_db_name = get_env("DB_NAME", "quant_db", environment=_infisical_env)
+_db_user = get_env("DB_USER", "quant_user", environment=_infisical_env)
+_db_password = get_env("DB_PASSWORD", "", environment=_infisical_env) or ""
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
 database_url = (
-    f"postgresql://{os.getenv('DB_USER', 'quant_user')}:"
-    f"{os.getenv('DB_PASSWORD', '')}@{os.getenv('DB_HOST', 'localhost')}:"
-    f"{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'quant_db')}"
+    f"postgresql://{_db_user}:{_db_password}@{_db_host}:{_db_port}/{_db_name}"
 )
 config.set_main_option("sqlalchemy.url", database_url)
 

@@ -82,7 +82,7 @@ class InfisicalConfig:
         project_id: str | None = None,
         default: str | None = None,
         secret_type: str = "shared",
-        secret_path: str = "/",
+        secret_path: str | None = None,
     ) -> str | None:
         """从 Infisical 获取密钥.
 
@@ -92,7 +92,7 @@ class InfisicalConfig:
             project_id: 项目 ID，默认从环境变量 INFISICAL_PROJECT_ID 获取
             default: 默认值
             secret_type: 密钥类型，shared (工作区共享，生产常用) 或 personal (个人)
-            secret_path: 密钥路径，默认根路径 /
+            secret_path: 密钥路径，默认取 INFISICAL_SECRET_PATH（见 default_secret_path）
 
         Returns:
             密钥值，如果获取失败则返回默认值
@@ -104,6 +104,7 @@ class InfisicalConfig:
         project_id = project_id or os.getenv("INFISICAL_PROJECT_ID")
         if not project_id:
             return default
+        secret_path = secret_path or cls.default_secret_path()
 
         try:
             response = requests.get(
@@ -133,7 +134,7 @@ class InfisicalConfig:
         environment: str = "dev",
         project_id: str | None = None,
         secret_type: str = "shared",
-        secret_path: str = "/",
+        secret_path: str | None = None,
     ) -> dict[str, str]:
         """从 Infisical 获取所有密钥.
 
@@ -141,7 +142,7 @@ class InfisicalConfig:
             environment: 环境名称 (dev, staging, production)
             project_id: 项目 ID，默认从环境变量 INFISICAL_PROJECT_ID 获取
             secret_type: 密钥类型，shared (工作区共享，生产常用) 或 personal (个人)
-            secret_path: 密钥路径，默认根路径 /
+            secret_path: 密钥路径，默认取 INFISICAL_SECRET_PATH（见 default_secret_path）
 
         Returns:
             密钥字典
@@ -153,6 +154,7 @@ class InfisicalConfig:
         project_id = project_id or os.getenv("INFISICAL_PROJECT_ID")
         if not project_id:
             return {}
+        secret_path = secret_path or cls.default_secret_path()
 
         try:
             response = requests.get(
@@ -199,6 +201,14 @@ class InfisicalConfig:
         cls._access_token = None
         cls._initialized = False
 
+    @classmethod
+    def default_secret_path(cls) -> str:
+        """Infisical 密钥路径:环境变量 INFISICAL_SECRET_PATH,默认根路径 /.
+
+        Finance 项目业务凭证在 /Galaxy 下(.env 填 INFISICAL_SECRET_PATH=/Galaxy)。
+        """
+        return os.getenv("INFISICAL_SECRET_PATH", "/") or "/"
+
 
 def get_env(
     key: str,
@@ -235,6 +245,20 @@ def get_env(
 
     # 3. 返回默认值
     return default
+
+
+def resolve_db_host(environment: str = "dev") -> str:
+    """DB 主机:显式 DB_HOST 覆盖 > DB_LOCAL_HOST(Infisical/环境) > localhost.
+
+    Finance 项目 /Galaxy 下主机拆成 DB_LOCAL_HOST(本地回环)/DB_REMOTE_HOST
+    (远程,仅人工运维登记用)。默认读 LOCAL;远程运维时显式导出
+    DB_HOST=<DB_REMOTE_HOST 的值> 覆盖。
+    """
+    explicit = os.getenv("DB_HOST")
+    if explicit:
+        return explicit
+    infisical_env = os.getenv("INFISICAL_ENVIRONMENT", environment)
+    return get_env("DB_LOCAL_HOST", "localhost", environment=infisical_env) or "localhost"
 
 
 def load_infisical_to_env(environment: str = "dev") -> dict[str, str]:

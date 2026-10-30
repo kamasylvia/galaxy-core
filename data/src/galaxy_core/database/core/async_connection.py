@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from galaxy_core.database.models import Base
-from galaxy_core.shared_kernel.utils.infisical_config import get_env
+from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class AsyncDatabaseManager:
 
         # 从环境变量或参数获取配置（统一走 get_env：优先 Infisical，其次 os.environ）
         infisical_env = os.getenv("INFISICAL_ENVIRONMENT", "dev")
-        host = host or get_env("DB_HOST", "localhost", environment=infisical_env)
+        host = host or resolve_db_host(environment=infisical_env)
         port_str = get_env("DB_PORT", "5432", environment=infisical_env)
         port = port or int(port_str or "5432")
         database = database or get_env("DB_NAME", "quant_db", environment=infisical_env)

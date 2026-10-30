@@ -19,10 +19,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("backfill")
 
 import pandas as pd  # noqa: E402
-from galaxy_core.shared_kernel.utils.infisical_config import get_env  # noqa: E402
+from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host  # noqa: E402
 
 GAL_DSN = (
-    f"host={get_env('DB_HOST')} port={get_env('DB_PORT', '5432')} "
+    f"host={resolve_db_host()} port={get_env('DB_PORT', '5432')} "
     f"dbname={get_env('DB_NAME', 'galaxy')} user={get_env('DB_USER')} "
     f"password={get_env('DB_PASSWORD')}"
 )

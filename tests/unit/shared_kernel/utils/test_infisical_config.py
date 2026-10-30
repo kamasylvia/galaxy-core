@@ -19,6 +19,7 @@ from galaxy_core.shared_kernel.utils.infisical_config import (
     InfisicalConfig,
     get_env,
     load_infisical_to_env,
+    resolve_db_host,
 )
 
 
@@ -259,3 +260,51 @@ class TestLoadInfisicalToEnv:
         import os
         assert os.environ["DB_HOST"] == "db.infisical"
         assert os.environ["DB_PASSWORD"] == "secret-from-infisical"
+
+
+class TestResolveDbHost:
+    """resolve_db_host:显式 DB_HOST > Infisical DB_LOCAL_HOST > 默认."""
+
+    def test_explicit_db_host_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """os.environ 有 DB_HOST → 直接返回,不查 Infisical."""
+        monkeypatch.setenv("DB_HOST", "db.explicit")
+        with patch.object(InfisicalConfig, "get_secret") as mock_get:
+            assert resolve_db_host() == "db.explicit"
+            mock_get.assert_not_called()
+
+    def test_infisical_local_host_when_no_explicit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """无显式 DB_HOST → 取 Infisical DB_LOCAL_HOST."""
+        monkeypatch.delenv("DB_HOST", raising=False)
+        with patch(
+            "galaxy_core.shared_kernel.utils.infisical_config.get_env",
+            return_value="db.local-infisical",
+        ):
+            assert resolve_db_host() == "db.local-infisical"
+
+    def test_falls_back_to_localhost(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """两边都没有 → localhost."""
+        monkeypatch.delenv("DB_HOST", raising=False)
+        monkeypatch.delenv("DB_LOCAL_HOST", raising=False)
+        with patch(
+            "galaxy_core.shared_kernel.utils.infisical_config.get_env",
+            return_value=None,
+        ):
+            assert resolve_db_host() == "localhost"
+
+
+class TestDefaultSecretPath:
+    """default_secret_path:INFISICAL_SECRET_PATH 环境变量,默认 /."""
+
+    def test_default_is_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """未设置 → /."""
+        monkeypatch.delenv("INFISICAL_SECRET_PATH", raising=False)
+        assert InfisicalConfig.default_secret_path() == "/"
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """.env 填 /Galaxy → 返回 /Galaxy."""
+        monkeypatch.setenv("INFISICAL_SECRET_PATH", "/Galaxy")
+        assert InfisicalConfig.default_secret_path() == "/Galaxy"

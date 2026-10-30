@@ -5,7 +5,7 @@
 local_path = "./data/local_cache/"
 api_timeout_seconds = 600
 
-# 数据库连接信息通过环境变量传入：DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+# 数据库连接信息通过环境变量传入:DB_HOST(仅显式覆盖用)/DB_LOCAL_HOST(默认), DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
 [kline]
 default_start_date = "20130101"

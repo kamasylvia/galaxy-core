@@ -12,7 +12,7 @@ import asyncpg
 import pandas as pd
 
 import akshare as ak
-from galaxy_core.shared_kernel.utils.infisical_config import get_env
+from galaxy_core.shared_kernel.utils.infisical_config import get_env, resolve_db_host
 
 
 async def main() -> int:
@@ -22,7 +22,7 @@ async def main() -> int:
     print(f"akshare 真相源: {len(truth)} 个交易日")
 
     conn = await asyncpg.connect(
-        host=get_env("DB_HOST", "127.0.0.1"),
+        host=resolve_db_host(),
         port=int(get_env("DB_PORT", "5432")),
         database=get_env("DB_NAME", "galaxy"),
         user=get_env("DB_USER"),

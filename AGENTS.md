@@ -187,8 +187,9 @@ K线查询的完整流程：
 ### Configuration
 - `config/settings.toml`: 生产环境配置（非敏感设置）
 - `config/settings.dev.toml`: 开发环境配置（含 30 分钟自动同步）
-- **凭证管理（2026-07-06 回退到 SDK 路线）**：用 **infisical SDK + `.env` 文件** + Machine Identity：
-  - `.env` 文件（项目根，`.gitignore` 已忽略）：含 `INFISICAL_CLIENT_ID/SECRET/PROJECT_ID` 三项 MI 凭证（SDK 启动用）+ 业务凭证 `GALAXY_*/DB_*`（SDK 拉取失败时兜底）。模板见 `.env.example`
+- **凭证管理（2026-07-06 回退到 SDK 路线；2026-10-29 切 Finance 项目）**：用 **infisical SDK + `.env` 文件** + Machine Identity：
+  - `.env` 文件（项目根，`.gitignore` 已忽略）：只含 MI 启动四项（`INFISICAL_CLIENT_ID/SECRET/PROJECT_ID/SECRET_PATH`，SECRET_PATH=/Galaxy）+ 项目根路径。业务凭证不再放 `.env`。模板见 `.env.example`
+  - 业务凭证在 Infisical **Finance 项目 `/Galaxy` 路径**下：`GALAXY_USERNAME/PASSWORD/HOST/PORT` + `DB_LOCAL_HOST`(本地回环)/`DB_REMOTE_HOST`(远程)/`DB_PORT/NAME/USER/PASSWORD`。代码默认读 LOCAL；显式导出 `DB_HOST` 可覆盖（远程运维）。见 `resolve_db_host()`
   - 生产 systemd: `EnvironmentFile=<项目根>/.env` + `ExecStart=...python -m galaxy_core.application.scheduler`（无 CLI 包装，scheduler 进程内 `InfisicalConfig.initialize()` 自取 access_token 拉业务 secrets）
   - 开发命令: 无需前缀，直接 `uv run pytest` / `uv run galaxy-core ...`（SDK 自动从 `.env` 读 MI 凭证 → 拉 secrets）
   - 代码: `shared_kernel/utils/infisical_config.py` 的 `get_env()` 优先 Infisical → 其次 `os.environ`（含 `.env` 灌入值）→ 默认值。`ConfigLoader._apply_env_overrides` 和 `AsyncDatabaseManager.initialize` 统一走 `get_env`

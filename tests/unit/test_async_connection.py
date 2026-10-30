@@ -22,13 +22,13 @@ class TestAsyncDatabaseManager:
         """不传参时,DB_* 凭证走 get_env(优先 Infisical,其次 os.environ).
 
         回归 2026-07-06 改动:async_connection.initialize() 的 5 处 os.getenv
-        改成 get_env。验证 get_env 被调用 + URL 含其返回值。
+        改成 get_env。2026-10-29:host 改走 resolve_db_host(DB_LOCAL_HOST
+        优先,显式 DB_HOST 覆盖),其余 4 个仍走 get_env。验证调用 + URL。
         """
         manager = AsyncDatabaseManager()
 
         def fake_get_env(key, default=None, environment="dev"):
             return {
-                "DB_HOST": "db.from-infisical",
                 "DB_PORT": "5433",
                 "DB_NAME": "galaxy",
                 "DB_USER": "postgres",
@@ -46,17 +46,21 @@ class TestAsyncDatabaseManager:
                 "galaxy_core.database.core.async_connection.get_env",
                 side_effect=fake_get_env,
             ) as mock_get_env,
+            patch(
+                "galaxy_core.database.core.async_connection.resolve_db_host",
+                return_value="db.from-infisical",
+            ) as mock_resolve,
         ):
             mock_create_engine.return_value = MagicMock()
             mock_sessionmaker.return_value = MagicMock()
 
             manager.initialize()
 
-            # get_env 被调用了 5 次(对应 5 个 DB_* 凭证)
-            assert mock_get_env.call_count == 5
+            # resolve_db_host 管 host,get_env 管其余 4 个
+            mock_resolve.assert_called_once()
+            assert mock_get_env.call_count == 4
             called_keys = [call.args[0] for call in mock_get_env.call_args_list]
             assert called_keys == [
-                "DB_HOST",
                 "DB_PORT",
                 "DB_NAME",
                 "DB_USER",
