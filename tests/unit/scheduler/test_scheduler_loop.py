@@ -855,6 +855,8 @@ class TestRealtimeSubWindowLogout:
         proc = MagicMock()
         proc.poll.return_value = None
         proc.returncode = None
+        # MagicMock.__int__ 默认返回 1,killpg(1) 等价 kill(-1),显式钉死真实感 pid
+        proc.pid = 12345
         scheduler._realtime_proc = proc
 
         await scheduler._check_realtime_sub_window(date(2026, 10, 26), time(15, 30))

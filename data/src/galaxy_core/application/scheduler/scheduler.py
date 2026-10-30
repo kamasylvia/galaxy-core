@@ -438,6 +438,26 @@ class AutoSyncScheduler:
             task.add_done_callback(self._on_task_done)
 
     @staticmethod
+    @staticmethod
+    def _safe_killpg(pid: int, sig: int) -> bool:
+        """killpg 带守卫:拒绝 pgid<=1 与非整数 pid,返回是否发出。
+
+        2026-10-30 团灭根因:os.killpg(MagicMock(), SIGTERM) 时 mock 走 __int__
+        默认值 1,而 glibc killpg(1) 等价 kill(-1) -> SIGTERM 发给当前用户全部
+        进程(omp/ssh 会话/全部用户服务同秒团灭)。所有 killpg 调用点必须走本守卫。
+        """
+        try:
+            pgid = int(pid)
+        except (TypeError, ValueError):
+            return False
+        if pgid <= 1:
+            return False
+        try:
+            os.killpg(pgid, sig)
+            return True
+        except (ProcessLookupError, PermissionError, OSError):
+            return False
+
     def _killpg_after_grace(pid: int, grace_seconds: int = 5) -> None:
         """窗口结束 killpg(SIGTERM)后 grace 秒仍存活则 SIGKILL(后台线程执行)."""
         import os as _os
@@ -445,12 +465,10 @@ class AutoSyncScheduler:
         import time as _time
 
         _time.sleep(grace_seconds)
-        try:
-            _os.killpg(pid, 0)  # 存活检查
-        except Exception:
+        if not AutoSyncScheduler._safe_killpg(pid, 0):  # 存活检查(守卫版)
             return
         try:
-            _os.killpg(pid, _sig.SIGKILL)
+            _os.killpg(int(pid), _sig.SIGKILL)
             logger.warning(f"realtime_sub 进程组 {pid} grace {grace_seconds}s 未退,SIGKILL")
         except Exception:
             pass
@@ -507,9 +525,7 @@ class AutoSyncScheduler:
             import os as _os
             import signal as _sig
 
-            try:
-                _os.killpg(proc.pid, _sig.SIGTERM)
-            except Exception:
+            if not self._safe_killpg(proc.pid, _sig.SIGTERM):
                 proc.terminate()
             try:
                 import asyncio as _asyncio
@@ -766,17 +782,11 @@ class AutoSyncScheduler:
         proc = getattr(self, "_realtime_proc", None)
         if proc is not None and proc.poll() is None:
             logger.info("停止 realtime_sub 子进程组")
-            try:
-                _os.killpg(proc.pid, _sig.SIGTERM)
-            except Exception:
-                pass
+            self._safe_killpg(proc.pid, _sig.SIGTERM)
             try:
                 await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
             except Exception:
-                try:
-                    _os.killpg(proc.pid, _sig.SIGKILL)
-                except Exception:
-                    pass
+                self._safe_killpg(proc.pid, _sig.SIGKILL)
 
         # 取消所有待处理任务
         for task in self._tasks:
